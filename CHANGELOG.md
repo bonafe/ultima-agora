@@ -2,6 +2,16 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (M4 — integration with Inteligência Aberta)
+
+### Added
+- Capability `domain-data` is real: the host injects a client (`host.domain`, scoped with `forWorkspace(id)`) and the view hands it to components as `this.domain`; `Workspace` takes `domain` and `id`.
+- `agora-sync`: `POST /admin/role` (Bearer admin token) so the host can change a role for open connections; absent without a token.
+- The integration itself lives in the Inteligência Aberta repository (Django app `agora`, `DjangoHost`, `ia-*` pack): see its ADR 013/014.
+
+### Changed
+- **Every instance is mounted**, inactive tabs only hidden. Outputs are derived from the live component, so a source on a background tab never fed what was connected to it (found with a second user in the portal).
+
 ## Unreleased (M3 — collaboration)
 
 ### Added

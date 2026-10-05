@@ -276,7 +276,8 @@ export function createSyncServer({ secret, adminToken = null, dataDir = null, ch
             }
         } catch (error) {
             if (error instanceof ChatError) return fail(error.code, error.message);
-            throw error;
+            log(`chat error in ${room.id}: ${error.message}`);                       // never close the connection over a chat problem
+            return fail('internal', 'Erro interno no chat. Tente de novo.');
         }
     }
 

@@ -162,3 +162,10 @@ A seção 22 ("Local-first") e o princípio de projeto exigem que a aplicação 
 - **Dados do hospedeiro:** `IndexedDbBackend` ganhou um armazenamento chave-valor para cópias locais; **o que pode ser guardado é decisão do hospedeiro** (no IA, por nível de classificação — ver ADR 015 do IA). Isso concretiza R-LF-4: dado acima do nível nunca é gravado.
 - **Configurações (contrato `host.settings`):** o hospedeiro oferece conta (com Sair), nível do cache (até um teto que ele define) e Limpar este dispositivo; o shell monta o diálogo com o que existir. **Limpar** é em duas etapas e avisa o que ainda não foi enviado.
 - **Ainda em aberto:** D-17 (cifra do armazenamento local) — hoje o IndexedDB não é cifrado, o que limita o nível que vale a pena guardar.
+
+### M5 (2026-10-05) — chat e fechamento do MVP: desvios e decisões
+
+- **O chat vive no `agora-sync`, não em Django/PostgreSQL** (a seção 9.3 previa a tabela `ChatMessage` no hospedeiro). Motivo: o hospedeiro de desenvolvimento não tem backend, e o chat precisa funcionar nele; o servidor de sincronização já autentica por token e conhece os papéis. Persistência: um log por workspace (`<id>.chat.jsonl`), reescrito sem o texto ao remover. Migrar para o PostgreSQL do hospedeiro fica como evolução (o protocolo cliente↔servidor não muda).
+- **Papéis (D-30):** `viewer` lê, não escreve; `participant` e acima escrevem; só o autor edita; autor ou dono removem (moderação). Retenção por instância (`CHAT_RETENTION_DAYS`, D-11), não por workspace.
+- **Menções:** `@Maria` casa com o primeiro nome ou o nome completo sem espaços. Notificação = contador, cor, título da aba, rótulo acessível. Referências a instâncias e objetos (R-CHAT-3), chat de componente e mensagens privadas continuam F2.
+- **Aceite:** ver `docs/aceite-mvp.md` — 14 critérios cobertos, 9 parciais, cada lacuna descrita. As duas **decisões** que divergem da letra são o 10 (o aviso "Carlos selecionou…" não existe: R-PRES-3) e o 15 (vale na configuração padrão da instância).

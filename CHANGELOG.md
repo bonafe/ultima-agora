@@ -2,6 +2,19 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (M5 — chat and MVP acceptance)
+
+### Added
+- **Chat** (`ultima-chat`, capability `chat`): a per-workspace log on `agora-sync` OUTSIDE the document (author taken from the token, idempotent by `clientId`, roles — a viewer reads, 20 sends per 10 s, 4000 chars, optional retention `CHAT_RETENTION_DAYS`, deleting redacts the text from disk). `ChatClient` keeps the history and the unsent messages on the device (reads and queues offline), counts unread and mentions; the shell has a 💬 drawer with the same component, a count (a different colour for mentions) and the unread number in the tab title.
+- `SyncProvider.sendChat` / `onChat` (message type 4); IndexedDB v3 with a `local` store for authored-here data (never touched by the data-cache policy).
+- **Acceptance suite** (`tests/run_acceptance.sh`): several full clients against the real `agora-sync`; a contract test over every catalog component; `tools/verificar_acoplamento.py` with its own test; `docs/aceite-mvp.md` maps the 23 criteria.
+- `DevHost({ identity })` for several people in one page.
+
+### Fixed (found by the real-server runs)
+- The `agora-sync` container could not write to `/data`: it now starts as root only to fix ownership, then drops to `node`.
+- A storage failure in the chat closed the connection; it now answers the sender with a clear error and the message is not half-created.
+- The service worker revalidates (`cache: 'no-cache'`), so an updated app is not masked by the browser's HTTP cache.
+
 ## Unreleased (settings)
 
 ### Added

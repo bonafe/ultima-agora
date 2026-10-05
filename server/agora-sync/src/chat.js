@@ -51,7 +51,12 @@ export class ChatLog {
         this.#seq = Math.max(this.#seq, message.seq);
     }
 
-    #append(event) { if (this.#file) appendFileSync(this.#file, `${JSON.stringify(event)}\n`); }
+    //A failing disk must not corrupt the in-memory state or crash the session: the caller turns it into a ChatError
+    #append(event) {
+        if (!this.#file) return;
+        try { appendFileSync(this.#file, `${JSON.stringify(event)}\n`); }
+        catch { throw new ChatError('storage', 'Não foi possível gravar a mensagem agora. Tente de novo em instantes.'); }
+    }
 
     //Drops what is older than the retention window and compacts the file (the window is a per-instance policy, D-11)
     #applyRetention() {
@@ -86,9 +91,9 @@ export class ChatLog {
         const existing = this.#byClient.get(`${author.id}:${clientId}`);
         if (existing) return { message: existing, duplicate: true };
         const text = ChatLog.#clean(body);
-        const message = { id: randomUUID(), seq: ++this.#seq, clientId, author: { id: author.id, name: author.name }, body: text, mentions: mentionsIn(text), createdAt: new Date(this.#now()).toISOString() };
+        const message = { id: randomUUID(), seq: this.#seq + 1, clientId, author: { id: author.id, name: author.name }, body: text, mentions: mentionsIn(text), createdAt: new Date(this.#now()).toISOString() };
+        this.#append({ t: 'msg', m: message });                // write first: if the disk refuses, nothing exists in memory either
         this.#insert(message);
-        this.#append({ t: 'msg', m: message });
         return { message, duplicate: false };
     }
 
@@ -99,8 +104,9 @@ export class ChatLog {
         if (message.deletedAt) throw new ChatError('gone', 'A mensagem foi removida.');
         const text = ChatLog.#clean(body);
         if (text === message.body) return message;
-        message.body = text; message.mentions = mentionsIn(text); message.editedAt = new Date(this.#now()).toISOString();
-        this.#append({ t: 'edit', id, body: text, at: message.editedAt });
+        const at = new Date(this.#now()).toISOString();
+        this.#append({ t: 'edit', id, body: text, at });
+        message.body = text; message.mentions = mentionsIn(text); message.editedAt = at;
         return message;
     }
 
@@ -110,8 +116,13 @@ export class ChatLog {
         if (!message) throw new ChatError('not_found', 'Mensagem não encontrada.');
         if (message.author.id !== requesterId && !isOwner) throw new ChatError('forbidden', 'Só o autor, ou o dono do workspace, pode remover a mensagem.');
         if (message.deletedAt) return message;
+        const before = { body: message.body, mentions: message.mentions };
         message.body = ''; message.mentions = []; message.deletedAt = new Date(this.#now()).toISOString();
-        this.#rewrite();                                      // appending a "deleted" line would leave the original text on disk
+        try { this.#rewrite(); }                              // appending a "deleted" line would leave the original text on disk
+        catch {
+            Object.assign(message, before); delete message.deletedAt;
+            throw new ChatError('storage', 'Não foi possível remover a mensagem agora. Tente de novo em instantes.');
+        }
         return message;
     }
 

@@ -16,7 +16,7 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 ## Commands
 
 - Serve the repo root with any static server (`python3 -m http.server`) and open `/tests/`.
-- Two suites: `tests/run.sh` (browser, headless Chrome) and `cd server/agora-sync && npm test` (server).
+- Three suites: `tests/run.sh` (browser, headless Chrome; also runs the coupling check and the precache check), `tests/run_acceptance.sh` (several clients against the real sync server — the MVP acceptance criteria, mapped in `docs/aceite-mvp.md`) and `cd server/agora-sync && npm test` (server, including the chat).
 - `tests/run.sh` runs the suite in headless Chrome and exits non-zero on failure (this is what CI runs).
 - Add a test with every bug fix. User-visible changes go in `CHANGELOG.md`.
 

@@ -179,6 +179,25 @@ test('chat: limits: empty, too long, and a flood are refused with a reason', asy
     a.stop();
 });
 
+test('chat: when the disk refuses, the sender gets a clear error, the connection stays, and nothing half-exists', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agora-chat-'));
+    const ctx = await startServer({ dataDir: dir });
+    const a = person(ctx, { user: 'a' }), b = person(ctx, { user: 'b' });
+    await Promise.all([ready(a), ready(b)]);
+    a.chat.send('antes da falha');
+    await until(() => bodies(b).length === 1);
+    rmSync(dir, { recursive: true, force: true });                           // the data directory disappears under the running server
+    const errors = [];
+    const receive = a.chat.receive.bind(a.chat);
+    a.chat.receive = event => { if (event.type === 'error') errors.push(event); receive(event); };
+    a.chat.send('durante a falha');
+    assert.ok(await until(() => errors.some(e => e.code === 'storage')), 'the sender is told what happened');
+    assert.equal(a.provider.status, 'synced', 'and stays connected');
+    assert.deepEqual(bodies(b), ['antes da falha'], 'the failed message reached nobody');
+    assert.equal(a.chat.messages.find(m => m.pending)?.pending, 'failed', 'it shows as failed, with a retry');
+    a.stop(); b.stop();
+});
+
 test('chat: a role change in session applies to the next message', async () => {
     const ctx = await startServer();
     const a = person(ctx, { user: 'a', role: 'editor' });

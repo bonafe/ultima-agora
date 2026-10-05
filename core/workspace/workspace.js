@@ -9,7 +9,8 @@ import { Layout } from './layout.js';
 import { validateConfig } from '../registry/manifest.js';
 
 export const SCHEMA_VERSION = 1;
-const newInstanceId = () => `cmp-${crypto.randomUUID().slice(0, 8)}`;
+import { uuid } from '../ids.js';
+const newInstanceId = () => `cmp-${uuid().slice(0, 8)}`;
 
 export class Workspace {
     #doc;

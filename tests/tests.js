@@ -7,6 +7,7 @@ import { MemoryStateStore } from '../collaboration/document/memory_state_store.j
 import { Layout } from '../core/workspace/layout.js';
 import { Workspace } from '../core/workspace/workspace.js';
 import { DevHost } from '../adapters/dev/dev_host.js';
+import { uuid } from '../core/ids.js';
 import { MemoryBackend } from '../collaboration/providers/indexeddb_persistence.js';
 import { renderMarkdown } from '../components/markdown/markdown.js';
 import { registerCoreComponents } from '../components/catalog.js';
@@ -463,6 +464,16 @@ test('dev host: create() falls back to memory when IndexedDB fails', async () =>
         const host = await DevHost.create({ dbName: 'agora-test-blocked' });
         assert(host.persistent === false && (await host.create('ok')).title === 'ok');
     } finally { indexedDB.open = original; }
+});
+
+test('uuid works without crypto.randomUUID (insecure contexts, e.g. a LAN IP over http)', () => {
+    const original = crypto.randomUUID;
+    Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true });
+    try {
+        const id = uuid();
+        assert(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id), id);
+        assert(uuid() !== id);
+    } finally { Object.defineProperty(crypto, 'randomUUID', { value: original, configurable: true }); }
 });
 
 // --- markdown ---

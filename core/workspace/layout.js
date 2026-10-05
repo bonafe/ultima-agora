@@ -10,7 +10,8 @@
 export const SIDES = ['center', 'left', 'right', 'top', 'bottom'];
 const MIN_RATIO = 0.1;
 
-const newId = () => `p-${crypto.randomUUID().slice(0, 8)}`;
+import { uuid } from '../ids.js';
+const newId = () => `p-${uuid().slice(0, 8)}`;
 
 export class Layout {
     #doc;

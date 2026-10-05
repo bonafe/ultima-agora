@@ -2,7 +2,8 @@
 //One local "user" who owns everything. Lets the generic components run without any backend (R-HOST-1).
 import { IndexedDbBackend, MemoryBackend, PersistentStateStore } from '../../collaboration/providers/indexeddb_persistence.js';
 
-const newId = () => crypto.randomUUID();
+import { uuid } from '../../core/ids.js';
+const newId = () => uuid();
 
 export class DevHost {
     #backend;

@@ -11,7 +11,8 @@ A primeira aplicação de referência é o [Inteligência Aberta](../inteligenci
   `cd server/agora-sync && npm install && AGORA_DEV_AUTH=1 npm start`, depois abra
   `http://localhost:8080/?sync=http://localhost:8787&name=Maria` e, **em outra origem** (`127.0.0.1` ou o IP da máquina,
   que têm IndexedDB próprio), o mesmo link do workspace com `&name=Carlos` (ou `&role=viewer`).
-- Próximo: M4 (integração com o Inteligência Aberta: hospedeiro Django, componentes `ia-*`, classificação).
+- M4 pronto: o Agora roda dentro do Inteligência Aberta (`/agora/`), com hospedeiro Django, papéis limitados pelo papel na organização, componentes `ia-search` e `ia-entity`, e `agora-sync` no compose. A integração vive no repositório do IA (branch `agora-m4`, ADR 013/014); este repositório continua sem conhecer dado de domínio. Para levar uma versão nova ao IA: `scripts/sincronizar_agora.sh` no IA.
+- Próximo: M5 (chat, workspace de referência e fechamento do MVP).
 
 ## Testes
 

@@ -577,6 +577,21 @@ test('view: removing an instance disposes its element; undo brings a fresh one b
     assert(instanceElement(view, id) && instanceElement(view, id) !== element);
 });
 
+test('view: a source on a background tab still feeds what is connected to it', async () => {
+    const { view, workspace } = await mountView();
+    const table = workspace.addInstance('ultima-table');
+    await wait(300);
+    const text = workspace.addInstance('ultima-text');                       //same panel: the table becomes a background tab
+    await wait(400);
+    assert(workspace.layout.findPanelOf(table) === workspace.layout.findPanelOf(text));
+    workspace.bus.connect({ instance: table, port: 'selectedRow' }, { instance: text, port: 'text' });
+    const background = view.rootNode.querySelector(`[data-instance-id="${table}"]`);
+    assert(background && background.closest('.tabpanel').hasAttribute('hidden'), 'the table must be mounted although its tab is hidden');
+    background.rootNode.querySelector('tbody tr').click();
+    await wait(200);
+    assert(view.rootNode.querySelector(`[data-instance-id="${text}"]`).rootNode.querySelector('p').textContent.includes('Empresa Alfa'));
+});
+
 test('view: moving an instance between panels keeps the same element and does not dispose it', async () => {
     const { view, workspace } = await mountView();
     const a = workspace.addInstance('ultima-text');

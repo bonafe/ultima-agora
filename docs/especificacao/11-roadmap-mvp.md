@@ -145,3 +145,10 @@ Cada critério é testável.
 - **Recuperação:** escritas locais que o servidor recusa (papel rebaixado com edições offline) voltariam a cada conexão; há um aviso com "Descartar alterações locais".
 - **Lacunas do M3:** link de convite com papel/expiração, chat (M5), autoria por operação (D-18), cursores de colegas dentro do texto, `Optional`: cache de dados classificados no cliente (D-16) ainda não se aplica (só há conteúdo autoral).
 - **Bugs que só apareceram com servidor real:** viewer desconectado por um update vazio do handshake; escrita de `schemaVersion`/título por quem ainda não sincronizou; `close()` do servidor preso.
+
+### M4 (2026-10-05) — descobertas da integração com o Inteligência Aberta
+
+- **Montagem preguiçosa revogada (R-LIFE-2).** O M1 só montava a aba ativa. Como o valor de uma saída é estado derivado do componente **montado** (R-PORT-4), uma fonte numa aba inativa nunca produzia saída e tudo que dependia dela ficava vazio (visto com um segundo usuário, no portal). Agora toda instância é montada e as abas inativas ficam apenas ocultas. Custo: mais componentes vivos; se pesar, a saída deve passar a ser mantida pelo barramento (não pelo componente) antes de voltar a ser preguiçosa.
+- **Capability `domain-data` implementada:** o host entrega um cliente (`forWorkspace(id)` o delimita ao workspace); o núcleo continua sem conhecer nenhum dado de domínio.
+- **Host de produção sem adoção por link:** no portal o acesso é concedido pelo dono (papéis); `DjangoHost.adopt()` não existe. Só o `DevHost` adota.
+- **Banco local por usuário** (`ia-agora-<id>`): documentos em cache no dispositivo não devem ser alcançáveis por quem fizer login depois no mesmo navegador (R-LF-4/5, parcial: ainda não há limpeza no logout).

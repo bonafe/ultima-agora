@@ -194,7 +194,9 @@ export class AgoraWorkspaceView extends ReactiveComponent {
 
         for (const record of records) {
             const body = h('div', { class: 'tabpanel', role: 'tabpanel', hidden: record.id !== active, 'aria-label': record.label });
-            if (record.id === active || this.#elements.has(record.id)) this.#mount(record, body);
+            //Every instance is mounted, the inactive tabs just hidden: outputs are derived from the live component, so a
+            //source on a background tab must still produce its values for whatever is connected to it (found in M4)
+            this.#mount(record, body);
             panel.append(body);
         }
         panel.addEventListener('pointerdown', () => { if (this.#active.get(node.id)) this.select(this.#active.get(node.id)); }, true);

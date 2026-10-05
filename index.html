@@ -15,6 +15,9 @@
         addEventListener('unhandledrejection', event => fatal(event.reason?.message ?? event.reason));
         addEventListener('error', event => fatal(event.message));
 
+        //Offline-first: after the first visit the app itself (not only the data) opens without a network
+        addEventListener('load', () => import('./core/offline/register_sw.js').then(m => m.registerOfflineShell()));
+
         try {
             const { ComponentRegistry } = await import('./core/registry/component_registry.js');
             const { registerCoreComponents } = await import('./components/catalog.js');

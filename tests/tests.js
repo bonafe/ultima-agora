@@ -448,6 +448,26 @@ test('dev host: a document survives closing and reopening the workspace', async 
     await host.destroy();
 });
 
+test('indexeddb backend: the host-data cache stores, lists and deletes entries, and an old v1 database upgrades', async () => {
+    const name = `agora-test-${uuid()}`;
+    //a database created by the first version (no "cache" store)
+    await new Promise((resolve, reject) => {
+        const open = indexedDB.open(name, 1);
+        open.onupgradeneeded = () => { open.result.createObjectStore('documents'); open.result.createObjectStore('workspaces', { keyPath: 'id' }); };
+        open.onsuccess = () => { open.result.close(); resolve(); };
+        open.onerror = () => reject(open.error);
+    });
+    for (const backend of [new IndexedDbBackend(name), new MemoryBackend()]) {
+        await backend.putCache('k1', { value: { a: 1 }, level: 'interno' });
+        await backend.putCache('k2', { value: [2], level: 'restrito' });
+        assert((await backend.getCache('k1')).value.a === 1);
+        assert((await backend.cacheEntries()).map(([key]) => key).sort().join() === 'k1,k2');
+        await backend.deleteCache('k1');
+        assert(await backend.getCache('k1') === undefined && (await backend.cacheEntries()).length === 1);
+        await backend.close();
+    }
+});
+
 test('dev host: catalog creates, renames, lists, archives and duplicates', async () => {
     const host = newHost();
     const a = await host.create('A');
@@ -1086,6 +1106,55 @@ test('workspace: a viewer opening an empty document writes nothing (the bug that
     const workspace = new Workspace({ doc, registry, user: { id: 'v' } });
     assert(workspace.readOnly && !workspace.canEditContent && doc.get('meta.schemaVersion') === undefined);
     throws(() => workspace.setTitle('x'), 'cannot change the composition');
+});
+
+test('precache: every file in the list is served, and every component the registry can load is in it', async () => {
+    const list = await (await fetch('../precache.json')).json();
+    assert(list.version && list.files.length > 20);
+    for (const required of ['./', 'index.html', 'core/components/agora_component.js', 'vendor/yjs/yjs.js', 'ui/shell/agora-shell.html', 'ui/shell/agora-shell.css', 'adapters/dev/dev_host.js']) {
+        assert(list.files.includes(required), `missing ${required}`);
+    }
+    for (const file of list.files) assert((await fetch(`../${file}`, { method: 'HEAD' })).ok, `${file} is listed but not served`);
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    for (const manifest of registry.list()) {
+        const module = new URL(manifest.module, new URL(`components/${manifest.name.replace(/^ultima-/, '')}/x`, location.origin + '/')).pathname.slice(1);
+        assert(list.files.includes(module), `${manifest.name}: ${module} is not precached`);
+        assert(list.files.includes(module.replace(/\.js$/, '.html')) && list.files.includes(module.replace(/\.js$/, '.css')), `${manifest.name}: template/style not precached`);
+    }
+    assert(!list.files.some(f => f.startsWith('tests/') || f.startsWith('server/') || f.startsWith('docs/')), 'tests, server and docs do not belong in the app cache');
+});
+
+test('offline shell: the cache version goes in the registration URL, and offline nothing is replaced', async () => {
+    const registered = [];
+    const fake = { register: async url => { registered.push(url); return { fake: true }; }, getRegistration: async () => ({ existing: true }) };
+    const original = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
+    Object.defineProperty(navigator, 'serviceWorker', { value: fake, configurable: true });
+    const realFetch = window.fetch;
+    try {
+        window.fetch = async () => new Response(JSON.stringify({ version: 'abc123', files: [] }));
+        const { registerOfflineShell } = await import('../core/offline/register_sw.js');
+        await registerOfflineShell({ shell: 'offline.html' });
+        assert(registered[0] === 'sw.js?precache=precache.json&v=abc123&shell=offline.html', registered[0]);
+        window.fetch = async () => { throw new TypeError('Failed to fetch'); };
+        const kept = await registerOfflineShell();
+        assert(registered.length === 1 && kept.existing, 'offline: keep the installed worker, register nothing');
+    } finally {
+        window.fetch = realFetch;
+        if (original) Object.defineProperty(navigator, 'serviceWorker', original); else delete navigator.serviceWorker;
+    }
+});
+
+test('the sync provider reconnects as soon as the browser reports the network is back', async () => {
+    const hub = new Hub(); hub.up = false;
+    const a = client(hub, 'a');
+    a.provider.disconnect(); a.provider.connect();
+    await wait(50);
+    assert(a.provider.status === 'offline');
+    hub.restore();
+    dispatchEvent(new Event('online'));
+    await synced(a);
+    assert(a.provider.status === 'synced');
 });
 
 // --- Yjs: merging, offline, presence ---

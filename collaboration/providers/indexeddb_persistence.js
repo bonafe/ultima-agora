@@ -43,6 +43,20 @@ export class IndexedDbBackend {
     async close() { (await this.#dbPromise)?.close(); this.#dbPromise = null; }
 }
 
+//Same surface as IndexedDbBackend, in memory: the fallback when IndexedDB is unavailable (private windows,
+//blocked site data). Nothing survives a reload.
+export class MemoryBackend {
+    #documents = new Map();
+    #workspaces = new Map();
+    async getDocument(id) { return this.#documents.get(id); }
+    async putDocument(id, snapshot) { this.#documents.set(id, structuredClone(snapshot)); }
+    async deleteDocument(id) { this.#documents.delete(id); }
+    async listWorkspaces() { return structuredClone([...this.#workspaces.values()]); }
+    async getWorkspace(id) { return structuredClone(this.#workspaces.get(id)); }
+    async putWorkspace(meta) { this.#workspaces.set(meta.id, structuredClone(meta)); }
+    async close() {}
+}
+
 //StateStore that loads a document from IndexedDB and saves it, debounced, on every change.
 //doc.status: 'synced' (everything written) | 'saving' | 'error'.
 export class PersistentStateStore {

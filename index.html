@@ -8,16 +8,26 @@
 </head>
 <body>
     <agora-shell></agora-shell>
+    <div id="fatal" role="alert" hidden style="font: 14px system-ui; padding: 1rem; background: #fde8e6; color: #7a1c12; border-bottom: 2px solid #c0392b;"></div>
     <script type="module">
-        import { ComponentRegistry } from './core/registry/component_registry.js';
-        import { registerCoreComponents } from './components/catalog.js';
-        import { DevHost } from './adapters/dev/dev_host.js';
-        import './ui/shell/agora-shell.js';
+        //Whatever goes wrong while starting must be visible on the page, not only in the Console
+        const fatal = message => { const box = document.getElementById('fatal'); box.hidden = false; box.textContent = `Erro ao iniciar o Ultima Agora: ${message} (detalhes no Console, F12)`; };
+        addEventListener('unhandledrejection', event => fatal(event.reason?.message ?? event.reason));
+        addEventListener('error', event => fatal(event.message));
 
-        const registry = new ComponentRegistry();
-        await registerCoreComponents(registry);
-        const shell = document.querySelector('agora-shell');
-        await shell.init({ host: new DevHost(), registry });
+        try {
+            const { ComponentRegistry } = await import('./core/registry/component_registry.js');
+            const { registerCoreComponents } = await import('./components/catalog.js');
+            const { DevHost } = await import('./adapters/dev/dev_host.js');
+            await import('./ui/shell/agora-shell.js');
+
+            const registry = new ComponentRegistry();
+            await registerCoreComponents(registry);
+            await document.querySelector('agora-shell').init({ host: await DevHost.create(), registry });
+        } catch (error) {
+            console.error(error);
+            fatal(error.message);
+        }
     </script>
 </body>
 </html>

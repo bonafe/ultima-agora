@@ -28,14 +28,27 @@ export class AgoraShell extends ReactiveComponent {
 
     #$(selector) { return this.rootNode.querySelector(selector); }
 
+    //Shows a message under the toolbar. kind: 'error' | 'warning'
+    notify(message, kind = 'error') {
+        const banner = this.#$('#banner');
+        banner.textContent = message;
+        banner.className = kind;
+        banner.hidden = !message;
+    }
+
     async init({ host, registry }) {
         await this.whenLoaded();
         this.#host = host;
         this.#registry = registry;
         this.#$('agora-palette').registry = registry;
         this.#wire();
-        addEventListener('hashchange', () => this.#openFromHash());
-        await this.#openFromHash();
+        if (host.persistent === false) this.notify('Armazenamento do navegador indisponível (janela anônima ou dados de site bloqueados). Seu trabalho NÃO será salvo ao recarregar.', 'warning');
+        const open = () => this.#openFromHash().catch(error => {
+            console.error('[agora-shell] could not open the workspace:', error);
+            this.notify(`Não foi possível abrir o workspace: ${error.message}. Detalhes no Console (F12).`);
+        });
+        addEventListener('hashchange', open);
+        await open();
     }
 
     #wire() {
@@ -63,7 +76,11 @@ export class AgoraShell extends ReactiveComponent {
             });
         }
         this.rootNode.addEventListener('palette-add', event => {
-            try { this.#workspace?.addInstance(event.detail.type); } catch (error) { console.error('[agora-shell] could not add component:', error); }
+            if (!this.#workspace) { this.notify('Nenhum workspace aberto ainda.'); return; }
+            try { this.#workspace.addInstance(event.detail.type); } catch (error) {
+                console.error('[agora-shell] could not add component:', error);
+                this.notify(`Não foi possível adicionar o componente: ${error.message}`);
+            }
         });
         this.rootNode.addEventListener('instance-selected', event => { this.#$('agora-inspector').selectedId = event.detail.id; });
         //Ctrl+Z / Ctrl+Shift+Z, unless the user is typing (text fields have their own undo)

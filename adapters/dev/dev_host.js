@@ -1,6 +1,6 @@
 //Development host: the HostAdapter contracts (docs/especificacao/09, 9.2) backed by IndexedDB, with no server.
 //One local "user" who owns everything. Lets the generic components run without any backend (R-HOST-1).
-import { IndexedDbBackend, PersistentStateStore } from '../../collaboration/providers/indexeddb_persistence.js';
+import { IndexedDbBackend, MemoryBackend, PersistentStateStore } from '../../collaboration/providers/indexeddb_persistence.js';
 
 const newId = () => crypto.randomUUID();
 
@@ -10,10 +10,28 @@ export class DevHost {
     store;
     identity = { id: 'urn:user:dev', name: 'Você', kind: 'human' };
 
-    constructor({ dbName = 'ultima-agora' } = {}) {
+    persistent = true;          //false when IndexedDB is unavailable and everything lives in memory
+
+    constructor({ dbName = 'ultima-agora', backend = null } = {}) {
         this.#dbName = dbName;
-        this.#backend = new IndexedDbBackend(dbName);
+        this.#backend = backend ?? new IndexedDbBackend(dbName);
+        if (backend instanceof MemoryBackend) this.persistent = false;
         this.store = new PersistentStateStore(this.#backend);
+    }
+
+    //Uses IndexedDB when it works and falls back to memory when it does not, so the app never opens "dead".
+    static async create({ dbName = 'ultima-agora', probeTimeoutMs = 3000 } = {}) {
+        try {
+            const backend = new IndexedDbBackend(dbName);
+            await Promise.race([
+                backend.listWorkspaces(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('IndexedDB did not answer')), probeTimeoutMs)),
+            ]);
+            return new DevHost({ dbName, backend });
+        } catch (error) {
+            console.warn('[DevHost] IndexedDB unavailable, working in memory:', error);
+            return new DevHost({ backend: new MemoryBackend() });
+        }
     }
 
     //WorkspaceCatalog

@@ -7,6 +7,7 @@ import { MemoryStateStore } from '../collaboration/document/memory_state_store.j
 import { Layout } from '../core/workspace/layout.js';
 import { Workspace } from '../core/workspace/workspace.js';
 import { DevHost } from '../adapters/dev/dev_host.js';
+import { MemoryBackend } from '../collaboration/providers/indexeddb_persistence.js';
 import { renderMarkdown } from '../components/markdown/markdown.js';
 import { registerCoreComponents } from '../components/catalog.js';
 import '../ui/workspace/agora-workspace.js';
@@ -441,6 +442,27 @@ test('dev host: catalog creates, renames, lists, archives and duplicates', async
     await host.archive(a.id);
     assert((await host.list()).map(w => w.id).join() === copy.id);
     await host.destroy();
+});
+
+test('dev host: works fully in memory when IndexedDB is unavailable', async () => {
+    const host = new DevHost({ backend: new MemoryBackend() });
+    assert(host.persistent === false);
+    const meta = await host.create('Volátil');
+    const doc = await host.store.open(meta.id);
+    doc.set('meta.title', 'x');
+    const copy = await host.duplicate(meta.id);
+    assert((await host.list()).length === 2 && copy.title === 'Volátil (cópia)');
+    await host.archive(meta.id);
+    assert((await host.list()).length === 1);
+});
+
+test('dev host: create() falls back to memory when IndexedDB fails', async () => {
+    const original = indexedDB.open;
+    indexedDB.open = () => { throw new Error('blocked'); };
+    try {
+        const host = await DevHost.create({ dbName: 'agora-test-blocked' });
+        assert(host.persistent === false && (await host.create('ok')).title === 'ok');
+    } finally { indexedDB.open = original; }
 });
 
 // --- markdown ---

@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { WebSocketServer } from 'ws';
@@ -97,7 +98,7 @@ class Connection {
     close(code, reason) { this.socket.close(code, reason); }
 }
 
-export function createSyncServer({ secret, dataDir = null, devAuth = false, maxMessageBytes = 2 * 1024 * 1024, log = () => {} } = {}) {
+export function createSyncServer({ secret, adminToken = null, dataDir = null, devAuth = false, maxMessageBytes = 2 * 1024 * 1024, log = () => {} } = {}) {
     const key = checkSecret(secret, devAuth);
     if (dataDir) mkdirSync(dataDir, { recursive: true });
     const rooms = new Map();
@@ -120,6 +121,18 @@ export function createSyncServer({ secret, dataDir = null, devAuth = false, maxM
     const http = createServer(async (request, response) => {
         const send = (status, body) => { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(body)); };
         if (request.url === '/health') return send(200, { ok: true, rooms: rooms.size, connections: connections.size });
+
+        //Server-to-server: the host tells us a role changed so it applies to open connections at once (R-PERM-4).
+        //Off unless an admin token is configured; never reachable with the dev flag's open endpoints.
+        if (request.url === '/admin/role' && request.method === 'POST' && adminToken) {
+            const given = Buffer.from((request.headers.authorization ?? '').replace(/^Bearer /, ''));
+            const expected = Buffer.from(adminToken);
+            if (given.length !== expected.length || !timingSafeEqual(given, expected)) return send(401, { error: 'unauthorized' });
+            try {
+                const { workspace, user, role } = await readJson(request);
+                return send(200, { changed: server.setRole(workspace, user, role) });
+            } catch (error) { return send(400, { error: error.message }); }
+        }
         if (!devAuth || !request.url.startsWith('/dev/')) return send(404, { error: 'not found' });
         cors(response);
         if (request.method === 'OPTIONS') { response.writeHead(204); return response.end(); }

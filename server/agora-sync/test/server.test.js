@@ -201,6 +201,29 @@ test('a client that goes offline keeps working locally and merges on reconnect',
     a.stop(); b.stop();
 });
 
+test('admin: only the host, with its token, can change a role; the change reaches open connections', async () => {
+    const ctx = await startServer({ adminToken: 'a-token-with-enough-length' });
+    const port = ctx.url.split(':').at(-1);
+    const post = (token, body) => fetch(`http://127.0.0.1:${port}/admin/role`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const user = connect(ctx, { user: 'u1', role: 'editor' });
+    await synced(user);
+
+    assert.equal((await post('wrong-token-of-same-size!!', { workspace: 'ws1', user: 'u1', role: 'viewer' })).status, 401);
+    assert.equal((await post('', { workspace: 'ws1', user: 'u1', role: 'viewer' })).status, 401);
+    assert.equal(user.events.control.at(-1).role, 'editor', 'a refused call changes nothing');
+
+    const ok = await post('a-token-with-enough-length', { workspace: 'ws1', user: 'u1', role: 'viewer' });
+    assert.deepEqual(await ok.json(), { changed: true });
+    assert.ok(await until(() => user.events.control.at(-1).role === 'viewer'));
+    assert.equal((await (await post('a-token-with-enough-length', { workspace: 'ws1', user: 'ninguem', role: 'viewer' })).json()).changed, false);
+    assert.equal((await post('a-token-with-enough-length', { workspace: 'ws1', user: 'u1', role: 'god' })).status, 200, 'an unknown role is simply not applied');
+    user.stop();
+
+    const withoutAdmin = await startServer();
+    const p = withoutAdmin.url.split(':').at(-1);
+    assert.equal((await fetch(`http://127.0.0.1:${p}/admin/role`, { method: 'POST', body: '{}' })).status, 404, 'no admin token configured: the endpoint does not exist');
+});
+
 test('oversized messages are refused', async () => {
     const ctx = await startServer({ maxMessageBytes: 2048 });
     const a = connect(ctx, { user: 'a' });

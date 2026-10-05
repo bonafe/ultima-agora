@@ -5,12 +5,17 @@ let server;
 try {
     server = createSyncServer({
         secret: process.env.AGORA_SYNC_SECRET,
+        adminToken: process.env.AGORA_SYNC_ADMIN_TOKEN || null,
         dataDir: process.env.DATA_DIR ?? './data',
         devAuth,
         log: message => console.log(`[agora-sync] ${message}`),
     });
 } catch (error) {
     console.error(`[agora-sync] ${error.message}`);
+    process.exit(1);
+}
+if (process.env.AGORA_SYNC_ADMIN_TOKEN && process.env.AGORA_SYNC_ADMIN_TOKEN.length < 16) {
+    console.error('[agora-sync] AGORA_SYNC_ADMIN_TOKEN must have at least 16 characters');
     process.exit(1);
 }
 const port = Number(process.env.PORT ?? 8787);

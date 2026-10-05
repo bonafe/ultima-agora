@@ -160,4 +160,5 @@ A seção 22 ("Local-first") e o princípio de projeto exigem que a aplicação 
 - **App shell:** `sw.js` + `precache.json` gerado (R-LF-1 passa a incluir o aplicativo, não só os dados). Verificado: o app reabre com o servidor desligado.
 - **Reconexão:** o `SyncProvider` volta na hora quando o navegador avisa `online`.
 - **Dados do hospedeiro:** `IndexedDbBackend` ganhou um armazenamento chave-valor para cópias locais; **o que pode ser guardado é decisão do hospedeiro** (no IA, por nível de classificação — ver ADR 015 do IA). Isso concretiza R-LF-4: dado acima do nível nunca é gravado.
-- **Ainda em aberto:** D-17 (cifra do armazenamento local) — hoje o IndexedDB não é cifrado, o que limita o nível que vale a pena guardar; "sair e limpar este dispositivo".
+- **Configurações (contrato `host.settings`):** o hospedeiro oferece conta (com Sair), nível do cache (até um teto que ele define) e Limpar este dispositivo; o shell monta o diálogo com o que existir. **Limpar** é em duas etapas e avisa o que ainda não foi enviado.
+- **Ainda em aberto:** D-17 (cifra do armazenamento local) — hoje o IndexedDB não é cifrado, o que limita o nível que vale a pena guardar.

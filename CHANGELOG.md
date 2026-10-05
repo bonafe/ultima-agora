@@ -2,6 +2,12 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (settings)
+
+### Added
+- ⚙ **Configurações** in the shell (`ui/settings/agora-settings.js`), built from `host.settings`: account and **Sair** (with "also clear this device"), **Dados neste dispositivo** (cache level, summary, **Limpar este dispositivo** in two steps that names what is still unsent), and app settings (theme, network). Sections the host does not offer are not shown.
+- `IndexedDbBackend.destroy()`, `YjsStateStore.closeAll()`, `DevHost.settings`.
+
 ## Unreleased (offline-first)
 
 ### Added

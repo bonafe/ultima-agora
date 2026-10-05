@@ -152,3 +152,12 @@ Cada critério é testável.
 - **Capability `domain-data` implementada:** o host entrega um cliente (`forWorkspace(id)` o delimita ao workspace); o núcleo continua sem conhecer nenhum dado de domínio.
 - **Host de produção sem adoção por link:** no portal o acesso é concedido pelo dono (papéis); `DjangoHost.adopt()` não existe. Só o `DevHost` adota.
 - **Banco local por usuário** (`ia-agora-<id>`): documentos em cache no dispositivo não devem ser alcançáveis por quem fizer login depois no mesmo navegador (R-LF-4/5, parcial: ainda não há limpeza no logout).
+
+### Offline-first (2026-10-05) — o requisito que a especificação já pedia e o MVP só cumpria pela metade
+
+A seção 22 ("Local-first") e o princípio de projeto exigem que a aplicação siga útil sem rede. Até o M4 isso valia só para o **documento**. Agora vale para **tudo que já passou pelo dispositivo**:
+
+- **App shell:** `sw.js` + `precache.json` gerado (R-LF-1 passa a incluir o aplicativo, não só os dados). Verificado: o app reabre com o servidor desligado.
+- **Reconexão:** o `SyncProvider` volta na hora quando o navegador avisa `online`.
+- **Dados do hospedeiro:** `IndexedDbBackend` ganhou um armazenamento chave-valor para cópias locais; **o que pode ser guardado é decisão do hospedeiro** (no IA, por nível de classificação — ver ADR 015 do IA). Isso concretiza R-LF-4: dado acima do nível nunca é gravado.
+- **Ainda em aberto:** D-17 (cifra do armazenamento local) — hoje o IndexedDB não é cifrado, o que limita o nível que vale a pena guardar; "sair e limpar este dispositivo".

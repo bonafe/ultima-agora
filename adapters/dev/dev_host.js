@@ -125,7 +125,7 @@ export class DevHost {
         return updated;
     }
 
-    openDocument(meta) { return this.store.open(meta.id, { role: meta.role ?? 'owner' }); }
+    openDocument(meta) { return this.store.open(meta.id, { role: meta.role ?? 'owner', me: { id: this.identity.id, name: this.identity.name } }); }
 
     discardLocal(id) { return this.store.discard(id); }
 

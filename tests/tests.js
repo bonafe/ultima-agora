@@ -13,6 +13,7 @@ import { YjsStateStore } from '../collaboration/providers/yjs_store.js';
 import { SyncProvider } from '../collaboration/providers/sync_provider.js';
 import { YjsPresence } from '../collaboration/presence/presence.js';
 import { IndexedDbBackend } from '../collaboration/providers/indexeddb_persistence.js';
+import { ChatClient } from '../collaboration/providers/chat_client.js';
 import { uuid } from '../core/ids.js';
 import { TypeRegistry, registerCoreTypes } from '../core/connections/types.js';
 import { BusError } from '../core/connections/bus.js';
@@ -25,6 +26,7 @@ import '../ui/workspace/agora-workspace.js';
 import '../ui/inspector/agora-inspector.js';
 import '../ui/palette/agora-palette.js';
 import '../ui/settings/agora-settings.js';
+import '../ui/shell/agora-shell.js';
 import { THEME_KEY } from '../ui/settings/agora-settings.js';
 
 //Zero-dependency test runner (same shape as the UltimaJS one): each test throws (via assert) on failure.
@@ -675,6 +677,201 @@ test('inspector: builds fields from the manifest and rejects invalid values', as
     assert(root.querySelector('.empty'));
 });
 
+// --- chat ---
+
+const msg = (seq, author, body, extra = {}) => ({ id: `m${seq}`, seq, clientId: `c${seq}`, author: { id: author, name: author }, body, mentions: [], createdAt: new Date(2026, 9, 5, 10, seq).toISOString(), ...extra });
+const newChat = (over = {}) => {
+    const sent = [];
+    let connected = over.connected ?? true;
+    const chat = new ChatClient({
+        workspaceId: over.workspaceId ?? 'w1', me: { id: 'me', name: 'Maria Souza' }, storage: over.storage ?? null,
+        send: request => { if (!connected) return false; sent.push(request); return true; }, canWrite: () => over.canWrite ?? true, available: () => over.available ?? true,
+    });
+    return { chat, sent, connect: value => { connected = value; } };
+};
+
+test('chat client: sending is optimistic, goes through an outbox, and the confirmation replaces the pending copy (no duplicate)', async () => {
+    const { chat, sent, connect } = newChat({ connected: false });
+    const clientId = chat.send('oi, tudo bem?');
+    assert(chat.messages.length === 1 && chat.messages[0].pending === 'pending' && sent.length === 0, 'offline: pending, nothing sent');
+    connect(true); chat.flush();
+    assert(sent.length === 1 && sent[0].clientId === clientId && chat.messages[0].pending === 'sending');
+    chat.receive({ type: 'message', message: msg(1, 'me', 'oi, tudo bem?', { clientId }) });
+    assert(chat.messages.length === 1 && !chat.messages[0].pending && chat.messages[0].id === 'm1', 'confirmed, not duplicated');
+    chat.receive({ type: 'message', message: msg(1, 'me', 'oi, tudo bem?', { clientId }) });
+    assert(chat.messages.length === 1, 'a repeated delivery changes nothing');
+});
+
+test('chat client: refusals are shown on the message; rate limiting just waits; empty and read-only are refused up front', async () => {
+    const { chat } = newChat();
+    const id = chat.send('algo');
+    chat.receive({ type: 'error', ref: id, code: 'forbidden', message: 'Seu papel só permite ler o chat.' });
+    assert(chat.messages[0].pending === 'failed' && chat.messages[0].error.includes('só permite ler'));
+    chat.retry(id);
+    assert(chat.messages[0].pending === 'sending');
+    chat.receive({ type: 'error', ref: id, code: 'rate', message: 'devagar' });
+    assert(chat.messages[0].pending === 'pending' && !chat.messages[0].error, 'rate: kept, will go out later');
+    chat.discard(id);
+    assert(chat.messages.length === 0);
+    try { chat.send('   '); throw new Error('accepted'); } catch (error) { assert(error.message.includes('vazia')); }
+    const viewer = newChat({ canWrite: false }).chat;
+    try { viewer.send('x'); throw new Error('accepted'); } catch (error) { assert(error.message.includes('só permite ler')); }
+});
+
+test('chat client: unread and mentions count what others wrote since you last read; your own never count', async () => {
+    const { chat } = newChat();
+    chat.receive({ type: 'history', messages: [msg(1, 'ana', 'bom dia'), msg(2, 'ana', 'veja', { mentions: ['maria'] }), msg(3, 'me', 'ok'), msg(4, 'bia', 'e @mariasouza?', { mentions: ['mariasouza'] }), msg(5, 'ana', 'para outra', { mentions: ['joao'] })], hasMore: true });
+    assert(chat.unread === 4 && chat.unreadMentions === 2, `${chat.unread}/${chat.unreadMentions}`);
+    assert(chat.mentionsMe({ mentions: ['mariasouza'] }) && chat.mentionsMe({ mentions: ['maria'] }) && !chat.mentionsMe({ mentions: ['mario'] }));
+    chat.receive({ type: 'deleted', message: msg(5, 'ana', '', { deletedAt: 'x' }) });
+    assert(chat.unread === 3, 'a deleted message is no longer unread');
+    chat.markRead();
+    assert(chat.unread === 0 && chat.lastRead === 5);
+});
+
+test('chat client: the history lives on this device (chat reads offline) together with the unsent messages and what was read', async () => {
+    const backend = new MemoryBackend();
+    const first = newChat({ storage: backend, connected: false });
+    first.chat.receive({ type: 'history', messages: [msg(1, 'ana', 'guardada aqui')], hasMore: false });
+    first.chat.markRead();
+    first.chat.send('escrita no avião');
+    await wait(50);
+    const reopened = newChat({ storage: backend, connected: false });
+    await reopened.chat.ready;
+    assert(reopened.chat.messages.map(m => m.body).join('|') === 'guardada aqui|escrita no avião', reopened.chat.messages.map(m => m.body).join('|'));
+    assert(reopened.chat.messages[1].pending === 'pending' && reopened.chat.lastRead === 1);
+    reopened.connect(true); reopened.chat.onConnected();
+    assert(reopened.sent.some(r => r.type === 'history') && reopened.sent.some(r => r.type === 'send' && r.body === 'escrita no avião'), 'on reconnect: ask for what was missed, send what waited');
+    assert((await backend.cacheEntries()).length === 0, 'chat is not host data: the classification cache policy never touches it');
+});
+
+test('chat client: history from the server wins over what we had (edits and deletions made while away)', async () => {
+    const { chat } = newChat();
+    chat.receive({ type: 'history', messages: [msg(1, 'ana', 'versão antiga'), msg(2, 'ana', 'vai sumir')], hasMore: false });
+    chat.receive({ type: 'history', messages: [msg(1, 'ana', 'versão nova', { editedAt: 'x' }), msg(2, 'ana', '', { deletedAt: 'y' }), msg(3, 'bia', 'chegou')], hasMore: false });
+    assert(chat.messages.map(m => m.body).join('|') === 'versão nova||chegou' && chat.messages[1].deletedAt);
+});
+
+const mountChat = async (chat) => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    await registry.load('ultima-chat');
+    const element = document.createElement('ultima-chat');
+    element.style.cssText = 'display:block;width:320px;height:360px';
+    element.attach({ instanceId: 'chat-test', manifest: registry.getManifest('ultima-chat'), config: {}, services: { chat } });
+    document.body.append(element);
+    assert(await settleOrTimeout(element.whenLoaded()));
+    await chat.ready;
+    await wait(40);
+    return element;
+};
+
+test('chat component: renders safely (no input becomes markup), highlights mentions of you, and marks edited/removed', async () => {
+    const { chat } = newChat();
+    chat.receive({ type: 'history', messages: [
+        msg(1, 'ana', '<img src=x onerror=alert(1)> **negrito** e [link](https://example.com) [x](javascript:alert(1))'),
+        msg(2, 'bia', 'oi @maria e @mariasouza, não @mariana', { mentions: ['maria', 'mariasouza', 'mariana'] }),
+        msg(3, 'ana', 'corrigida', { editedAt: 'x' }), msg(4, 'ana', '', { deletedAt: 'y' }),
+    ], hasMore: false });
+    const element = await mountChat(chat);
+    const log = element.rootNode.querySelector('#log');
+    assert(!log.querySelector('img') && !log.querySelector('script'), 'HTML typed by someone is text, not markup');
+    assert(log.querySelector('strong')?.textContent === 'negrito' && log.querySelector('a[href="https://example.com"]'));
+    assert(![...log.querySelectorAll('a')].some(a => a.getAttribute('href').startsWith('javascript')), 'only http(s) links');
+    const marks = [...log.querySelectorAll('mark')].map(m => m.textContent);
+    assert(marks.join() === '@maria,@mariasouza', `mentions of me highlighted, not @mariana: ${marks}`);
+    assert(log.querySelector('.mentions-me') && log.textContent.includes('(editada)') && log.textContent.includes('Mensagem removida'));
+    assert(log.querySelector('.divider')?.textContent === 'Novas mensagens', 'where the unread start');
+    element.remove();
+});
+
+test('chat component: Enter sends, Shift+Enter does not; pending and failed messages offer their actions; own messages can be edited and removed', async () => {
+    const { chat, sent } = newChat();
+    const element = await mountChat(chat);
+    const text = element.rootNode.querySelector('#text');
+    text.value = 'primeira linha';
+    text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+    assert(sent.length === 0 && text.value === 'primeira linha', 'Shift+Enter is a new line, not a send');
+    text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    assert(sent.length === 1 && sent[0].body === 'primeira linha' && text.value === '', 'Enter sends and clears');
+    await wait(30);
+    assert(element.rootNode.querySelector('.state').textContent === 'Enviando…');
+
+    chat.receive({ type: 'error', ref: sent[0].clientId, code: 'forbidden', message: 'Seu papel só permite ler o chat.' });
+    await wait(30);
+    const failed = element.rootNode.querySelector('.failed-actions');
+    assert(failed && [...failed.querySelectorAll('button')].map(b => b.textContent).join() === 'Tentar de novo,Descartar');
+    [...failed.querySelectorAll('button')].find(b => b.textContent === 'Descartar').click();
+    await wait(30);
+    assert(!element.rootNode.querySelector('.failed-actions'));
+
+    chat.receive({ type: 'message', message: msg(7, 'me', 'minha mensagem') });
+    chat.receive({ type: 'message', message: msg(8, 'ana', 'da Ana') });
+    await wait(40);
+    const own = element.rootNode.querySelector('[data-id="m7"]'), others = element.rootNode.querySelector('[data-id="m8"]');
+    assert([...own.querySelectorAll('.actions button')].map(b => b.textContent).join() === 'Editar,Remover');
+    assert(!others.querySelector('.actions button'), 'nobody else\'s message can be edited or removed from here');
+    sent.length = 0;
+    [...own.querySelectorAll('.actions button')].find(b => b.textContent === 'Editar').click();
+    await wait(30);
+    const editor = element.rootNode.querySelector('.edit textarea');
+    editor.value = 'minha mensagem corrigida';
+    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    assert(sent[0].type === 'edit' && sent[0].id === 'm7' && sent[0].body === 'minha mensagem corrigida');
+    await wait(30);
+    [...element.rootNode.querySelector('[data-id="m7"]').querySelectorAll('.actions button')].find(b => b.textContent === 'Remover').click();
+    assert(sent[1].type === 'delete' && sent[1].id === 'm7');
+    element.remove();
+});
+
+test('chat component: a viewer reads without a composer; without a collaboration server it says so; with no chat service it degrades', async () => {
+    const viewer = await mountChat(newChat({ canWrite: false }).chat);
+    assert(viewer.rootNode.querySelector('#composer').hidden && viewer.rootNode.querySelector('#notice').textContent.includes('só permite ler'));
+    viewer.remove();
+    const offline = await mountChat(newChat({ available: false }).chat);
+    assert(offline.rootNode.querySelector('#composer').hidden && offline.rootNode.querySelector('#notice').textContent.includes('servidor de colaboração'));
+    offline.remove();
+
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    await registry.load('ultima-chat');
+    const bare = document.createElement('ultima-chat');
+    bare.attach({ instanceId: 'x', manifest: registry.getManifest('ultima-chat'), config: {}, services: { chat: undefined } });
+    document.body.append(bare);
+    assert(await settleOrTimeout(bare.whenLoaded()));
+    assert(bare.rootNode.querySelector('#notice').textContent.includes('não está disponível'));
+    bare.remove();
+});
+
+test('chat in the shell: the drawer button counts unread messages, colours mentions, and opening it marks everything read', async () => {
+    const host = new DevHost({ dbName: `agora-test-${uuid()}` });
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const shell = document.createElement('agora-shell');
+    shell.style.cssText = 'display:block;width:900px;height:500px';
+    const savedHash = location.hash;
+    document.body.append(shell);
+    assert(await settleOrTimeout(shell.whenLoaded()));
+    await shell.init({ host, registry });
+    await wait(300);
+    const root = shell.shadowRoot;
+    const toggle = root.querySelector('#chat-toggle'), badge = root.querySelector('#chat-badge');
+    assert(!toggle.hidden, 'the host provides a chat, so the button exists');
+    const chat = shell.workspace.chat;
+    chat.receive({ type: 'history', messages: [msg(1, 'ana', 'oi'), msg(2, 'ana', 'veja', { mentions: [host.identity.name.toLowerCase().split(/\s+/)[0]] })], hasMore: false });
+    await wait(40);
+    assert(badge.textContent === '2' && !badge.hidden, `badge shows ${badge.textContent}`);
+    assert(toggle.getAttribute('aria-label').includes('2 mensagem') && toggle.getAttribute('aria-label').includes('mencionando você'), toggle.getAttribute('aria-label'));
+    assert(document.title.startsWith('(2)'));
+    toggle.click();
+    await wait(60);
+    assert(!root.querySelector('#chat-pane').hasAttribute('hidden') && root.querySelector('#chat-pane ultima-chat'));
+    assert(chat.unread === 0 && badge.hidden && !document.title.startsWith('('), 'opened: read, badge gone');
+    shell.remove();
+    history.replaceState(null, '', location.pathname + savedHash);
+    await host.destroy();
+});
+
 // ---- settings dialog ----
 
 const fakeHost = (over = {}) => {
@@ -827,7 +1024,7 @@ test('palette: lists registered components, filters by search and announces addi
     palette.registry = registry;
     await wait(50);
     const items = () => [...palette.rootNode.querySelectorAll('button.item')];
-    assert(items().length === 4);
+    assert(items().length === 5);
     const search = palette.rootNode.querySelector('#search');
     search.value = 'markdown'; search.dispatchEvent(new Event('input'));
     assert(items().length === 1 && items()[0].textContent.startsWith('Notas'));

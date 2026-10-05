@@ -677,6 +677,81 @@ test('inspector: builds fields from the manifest and rejects invalid values', as
     assert(root.querySelector('.empty'));
 });
 
+// --- the contract suite: every component of the catalog (acceptance criterion 19) ---
+
+const servicesFor = (manifest, emitted) => {
+    const capabilities = manifest.capabilities ?? [];
+    const services = {};
+    if (capabilities.includes('connectable')) { services.emit = (port, value) => emitted.push([port, value]); services.ports = { value: () => undefined }; }
+    if (capabilities.includes('shared-content')) {
+        let text = '';
+        services.shared = { getText: () => text, setText: next => { text = next; }, onChange: () => () => {}, canEdit: true };
+    }
+    if (capabilities.includes('presence-aware')) services.presence = { setActivity: () => {} };
+    if (capabilities.includes('domain-data')) services.domain = { get: async () => ({ results: [] }), forWorkspace() { return this; } };
+    if (capabilities.includes('chat')) services.chat = new ChatClient({ workspaceId: 'contract', me: { id: 'u', name: 'U' }, send: () => false });
+    services.setConfig = () => [];
+    return services;
+};
+
+test('contract: every component of the catalog honours the AgoraComponent contract', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const manifests = registry.list();
+    for (const name of ['ultima-text', 'ultima-notes', 'ultima-table', 'ultima-graph', 'ultima-chat']) assert(manifests.some(m => m.name === name), `the catalog lost ${name}`);
+
+    for (const manifest of manifests) {
+        const label = manifest.name;
+        assert(validateManifest(manifest).length === 0, `${label}: manifest invalid`);
+        assert(manifest.name === manifest.tag && /^\d+\.\d+\.\d+$/.test(manifest.version), `${label}: name/tag/version`);
+
+        const Component = await registry.load(manifest.name);
+        assert(customElements.get(manifest.tag) === Component, `${label}: custom element not defined by the registry`);
+
+        const emitted = [];
+        const element = document.createElement(manifest.tag);
+        assert(element.attach && element.deliverInput && element.invokeAction && element.dispose, `${label}: is not an AgoraComponent`);
+        element.attach({ instanceId: `contract-${label}`, manifest, config: {}, services: servicesFor(manifest, emitted) });
+        element.style.cssText = 'display:block;width:400px;height:300px';
+        document.body.append(element);
+        assert(await settleOrTimeout(element.whenLoaded(), 3000), `${label}: never finished loading`);
+        await wait(150);
+
+        //Defaults come from the manifest, and nothing outside it
+        const configKeys = Object.keys(element.config);
+        assert(configKeys.every(key => key in (manifest.config ?? {})), `${label}: config has keys the manifest does not declare: ${configKeys}`);
+
+        //It only emits what it declared, and what it emits is valid for the declared type
+        for (const [port, value] of emitted) {
+            assert(manifest.outputs?.[port], `${label}: emitted "${port}", which is not a declared output`);
+            const problem = registry.types.validate(manifest.outputs[port].type, value);
+            assert(!problem, `${label}.${port}: ${problem}`);
+        }
+
+        //Inputs tolerate "nothing" (a disconnected port) and every declared action exists
+        for (const port of Object.keys(manifest.inputs ?? {})) { element.deliverInput(port, undefined); }
+        for (const [name, spec] of Object.entries(manifest.actions ?? {})) {
+            let result;
+            try { result = await element.invokeAction(name); } catch (error) { assert(!(error instanceof TypeError), `${label}.${name}: ${error.message}`); continue; }
+            if (spec.produces && result !== undefined) assert(!registry.types.validate(spec.produces, result), `${label}.${name}: result is not a ${spec.produces}`);
+        }
+        try { element.invokeAction('no-such-action'); throw new Error('accepted'); } catch (error) { assert(error.message.includes('unknown action'), `${label}: ${error.message}`); }
+
+        //The agent context is small and plain JSON
+        const context = element.describeContext();
+        const json = JSON.stringify(context);
+        assert(json !== undefined && json.length < 2000 && JSON.stringify(JSON.parse(json)) === json, `${label}: describeContext is not small, plain JSON`);
+
+        //Capabilities it did not declare stay closed (R-CAP-1)
+        for (const [service, capability] of [['shared', 'shared-content'], ['chat', 'chat'], ['domain', 'domain-data'], ['presence', 'presence-aware']]) {
+            if (!(manifest.capabilities ?? []).includes(capability)) { try { void element[service]; throw new Error('open'); } catch (error) { assert(error.message.includes(capability), `${label}: "${service}" must need "${capability}"`); } }
+        }
+
+        element.dispose();
+        element.remove();
+    }
+});
+
 // --- chat ---
 
 const msg = (seq, author, body, extra = {}) => ({ id: `m${seq}`, seq, clientId: `c${seq}`, author: { id: author, name: author }, body, mentions: [], createdAt: new Date(2026, 9, 5, 10, seq).toISOString(), ...extra });

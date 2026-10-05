@@ -34,13 +34,14 @@ export class DevHost {
     persistent = true;          //false when IndexedDB is unavailable and everything lives in memory
 
     //sync: { url: 'ws://host:8787', http: 'http://host:8787' } | null.  role: what to ask the dev server for.
-    constructor({ dbName = 'ultima-agora', backend = null, sync = null, role = null, name = null } = {}) {
+    //identity: { id, name } overrides the one kept in localStorage (tests with several people in one page)
+    constructor({ dbName = 'ultima-agora', backend = null, sync = null, role = null, name = null, identity = null } = {}) {
         this.#dbName = dbName;
         this.#backend = backend ?? new IndexedDbBackend(dbName);
         this.#sync = sync;
         this.#requestedRole = role;
         if (backend instanceof MemoryBackend) this.persistent = false;
-        this.identity = loadIdentity(name);
+        this.identity = identity ? { kind: 'human', ...identity, color: colorFor(identity.id) } : loadIdentity(name);
         this.store = new YjsStateStore({
             backend: this.#backend,
             sync: sync && { url: sync.url, session: id => this.#session(id) },

@@ -12,6 +12,8 @@ CHROME="${CHROME:-$(command -v google-chrome || command -v chromium || command -
 [ -n "$CHROME" ] || { echo "Chrome/Chromium not found (set CHROME=...)" >&2; exit 2; }
 
 tools/gerar_precache.py --check || exit 1       # the offline app cache must list every runtime file
+tools/verificar_acoplamento.py || exit 1        # no Yjs outside collaboration/, no domain terms in the core
+python3 tools/test_verificar_acoplamento.py >/dev/null 2>&1 || { echo "the coupling checker itself is broken" >&2; exit 1; }
 
 PORT="${PORT:-8791}"
 DEBUG_PORT="${DEBUG_PORT:-9334}"

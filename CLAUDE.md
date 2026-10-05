@@ -25,10 +25,13 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 - `core/components/` — `mix.js` (re-export of UltimaJS `mix()`, D-02) and `agora_component.js`.
 - `core/registry/` — manifest validation and `ComponentRegistry`.
 - `collaboration/document/` — `MemoryStateStore`; the Yjs store will implement the same surface (R-STORE-*).
+- `core/workspace/` — `layout.js` (docking tree in the document) and `workspace.js` (the only way to mutate the composition).
+- `collaboration/providers/` — IndexedDB persistence. `adapters/dev/` — `DevHost`, the serverless host.
+- `components/` — generic catalog (`ultima-text`, `ultima-notes`, markdown renderer). `ui/` — shell, palette, workspace view, inspector.
+- Run the app: serve the root and open `/` (hash route `#/workspace/<id>`).
 - `tests/` — zero-dependency browser tests, same runner shape as UltimaJS.
 
-Planned (see spec 55): `core/{workspace,events,connections,state,permissions}`, `collaboration/{presence,providers}`,
-`conference/`, `components/`, `ui/`, `adapters/`.
+Planned (see spec 55): `core/{events,connections,permissions}`, `collaboration/presence`, `conference/`.
 
 ## Rules that matter
 

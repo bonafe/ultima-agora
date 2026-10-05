@@ -1,0 +1,14 @@
+{
+  "name": "ultima-text",
+  "tag": "ultima-text",
+  "title": "Texto",
+  "version": "1.0.0",
+  "category": "content",
+  "description": "Texto simples exibido no workspace.",
+  "module": "./ultima-text.js",
+  "config": {
+    "text": { "type": "text", "default": "", "title": "Texto" },
+    "size": { "type": "enum", "values": ["small", "normal", "large"], "default": "normal", "title": "Tamanho" }
+  },
+  "capabilities": ["resizable"]
+}

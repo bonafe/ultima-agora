@@ -12,7 +12,22 @@ export class MemoryWorkspaceDoc {
     #undo = [];
     #redo = [];
     #current = null;                        //open transaction: { label, changes: [{ path, before, after }] }
-    status = 'synced';
+    #status = 'synced';
+    #statusListeners = new Set();
+
+    //'offline' | 'connecting' | 'saving' | 'synced' | 'error' (R-LF-1: the UI shows it)
+    get status() { return this.#status; }
+    set status(value) {
+        if (value === this.#status) return;
+        this.#status = value;
+        for (const fn of [...this.#statusListeners]) { try { fn(value); } catch (error) { console.error('[MemoryWorkspaceDoc] status listener error:', error); } }
+    }
+    onStatus(fn) { this.#statusListeners.add(fn); return () => this.#statusListeners.delete(fn); }
+
+    //Fires whenever the undo/redo stacks change (a transaction closes, a bare write, undo, redo).
+    #historyListeners = new Set();
+    onHistory(fn) { this.#historyListeners.add(fn); return () => this.#historyListeners.delete(fn); }
+    #historyChanged() { for (const fn of [...this.#historyListeners]) { try { fn(); } catch (error) { console.error('[MemoryWorkspaceDoc] history listener error:', error); } } }
 
     get(path) {
         let node = this.#root;
@@ -44,7 +59,7 @@ export class MemoryWorkspaceDoc {
         if (record) {
             const change = { keys, before, after: value === undefined ? undefined : structuredClone(value) };
             if (this.#current) this.#current.changes.push(change);
-            else { this.#undo.push({ label: keys.join('.'), changes: [change] }); this.#redo.length = 0; }   //a bare write is its own operation
+            else { this.#undo.push({ label: keys.join('.'), changes: [change] }); this.#redo.length = 0; this.#historyChanged(); }   //a bare write is its own operation
         }
         this.#notify(keys);
     }
@@ -57,7 +72,7 @@ export class MemoryWorkspaceDoc {
         finally {
             const { changes } = this.#current;
             this.#current = null;
-            if (changes.length) { this.#undo.push({ label, changes }); this.#redo.length = 0; }
+            if (changes.length) { this.#undo.push({ label, changes }); this.#redo.length = 0; this.#historyChanged(); }
         }
     }
 
@@ -76,6 +91,7 @@ export class MemoryWorkspaceDoc {
             this.#write(change.keys, value === undefined ? undefined : structuredClone(value), false);
         }
         to.push(operation);
+        this.#historyChanged();
         return true;
     }
 
@@ -101,6 +117,7 @@ export class MemoryWorkspaceDoc {
         this.#root = structuredClone(snapshot);
         this.#undo.length = 0; this.#redo.length = 0;
         this.#notify([]);
+        this.#historyChanged();
     }
 }
 

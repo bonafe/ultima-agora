@@ -5,7 +5,8 @@ Ambiente colaborativo e componível construído sobre o [UltimaJS](../ultima): u
 A primeira aplicação de referência é o [Inteligência Aberta](../inteligencia-aberta).
 
 - Especificação: [`docs/especificacao/`](docs/especificacao/00-indice.md)
-- Estado: **M0 (fundação)** — mixins (no UltimaJS 0.3.0), manifesto, registro de componentes, `AgoraComponent` e estado em memória.
+- Estado: **M1 (workspace local)** — shell, paleta, layout com painéis e abas, inspetor, notas e texto, persistência em IndexedDB. Sem servidor: `python3 -m http.server` e abra `index.html`.
+- Próximo: M2 (barramento tipado, conexões, ações).
 
 ## Testes
 

@@ -104,3 +104,18 @@ Cada critério é testável.
 3. M0: harness de testes, `AgoraComponent` mínimo, `ComponentRegistry` com validação de manifesto, `MemoryStateStore`.
 4. Protótipo "tracer bullet": `ultima-text` + `ultima-table` conectados por uma porta tipada, num shell mínimo, salvo em IndexedDB.
 5. Redigir ADRs no IA (adoção, sync, modelo de workspace).
+
+## 11.9 Registro de implementação
+
+### M1 (2026-10-04) — desvios e decisões tomadas na implementação
+
+- **Layout em árvore binária** (`split` com duas filhas e `ratio`; `tabs` com lista de instâncias), gravado em `layout.root` / `layout.panels.<id>`. A aba ativa e a instância selecionada são estado local do usuário (R-LAY-5) e **não** estão no documento. Árvore e `children` são gravados como valor único por painel, e não por campo (R-CONF-1 vale para `config`; o layout será revisto na troca para Yjs).
+- **Notas (D-07):** o editor é um `<textarea>` com Markdown e botão "Ver" (renderizador próprio, seguro, sem HTML), em vez de `contenteditable`. A ligação textarea ↔ texto compartilhado é bem mais simples e robusta; a interface `SharedText` (`getText/setText/onChange`) permanece, então trocar o editor continua barato. Negrito/listas/links são escritos em Markdown.
+- **Digitação nas notas** é agrupada (400 ms) para que um passo de desfazer seja uma rajada de texto e não uma letra.
+- **Conteúdo de instância removida fica no documento** (para o desfazer devolvê-lo); a limpeza de conteúdo órfão fica para o GC (5.8).
+- **Montagem preguiçosa (R-LIFE-2):** uma aba só cria o componente quando fica ativa pela primeira vez; depois ele permanece montado. Mover entre painéis reaproveita o mesmo elemento e **não** chama `onDispose` (por isso `dispose()` explícito em vez de `disconnectedCallback`).
+- **Alterações de `config` e de conteúdo não repintam os painéis** (mover um `textarea` com foco o desfocaria).
+- **Dev host:** `DevHost` cobre `IdentityProvider` + `WorkspaceCatalog` + store local. `AccessPolicy`/`TokenIssuer` ainda não existem (um único dono local).
+- **Rota:** `#/workspace/<id>` no hospedeiro de desenvolvimento (R-WS-2 prevê `/agora/workspace/<id>` no hospedeiro real).
+- **Testes:** `tests/run.sh` acompanha o título da página (o `--virtual-time-budget` não espera o IndexedDB).
+- **Fora do M1:** barra de ferramentas própria (`ui/toolbar`) — está dentro do shell; atribuição de papéis; `ultima-markdown` como componente (existe só o renderizador); `visibleIf` no inspetor; seleção compartilhada e presença (M3).

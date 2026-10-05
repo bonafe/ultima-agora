@@ -1,0 +1,58 @@
+//Development host: the HostAdapter contracts (docs/especificacao/09, 9.2) backed by IndexedDB, with no server.
+//One local "user" who owns everything. Lets the generic components run without any backend (R-HOST-1).
+import { IndexedDbBackend, PersistentStateStore } from '../../collaboration/providers/indexeddb_persistence.js';
+
+const newId = () => crypto.randomUUID();
+
+export class DevHost {
+    #backend;
+    #dbName;
+    store;
+    identity = { id: 'urn:user:dev', name: 'Você', kind: 'human' };
+
+    constructor({ dbName = 'ultima-agora' } = {}) {
+        this.#dbName = dbName;
+        this.#backend = new IndexedDbBackend(dbName);
+        this.store = new PersistentStateStore(this.#backend);
+    }
+
+    //WorkspaceCatalog
+    async list() {
+        return (await this.#backend.listWorkspaces()).filter(w => !w.archivedAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    }
+
+    get(id) { return this.#backend.getWorkspace(id); }
+
+    async create(title = 'Novo workspace') {
+        const now = new Date().toISOString();
+        const meta = { id: newId(), title, ownerId: this.identity.id, role: 'owner', createdAt: now, updatedAt: now, archivedAt: null };
+        await this.#backend.putWorkspace(meta);
+        return meta;
+    }
+
+    async rename(id, title) { return this.#update(id, { title }); }
+    async touch(id) { return this.#update(id, {}); }
+    async archive(id) { return this.#update(id, { archivedAt: new Date().toISOString() }); }
+
+    async #update(id, patch) {
+        const meta = await this.#backend.getWorkspace(id);
+        if (!meta) throw new Error(`Unknown workspace "${id}"`);
+        const updated = { ...meta, ...patch, updatedAt: new Date().toISOString() };
+        await this.#backend.putWorkspace(updated);
+        return updated;
+    }
+
+    //R-WS-6: copies composition and authored content (all of what the document holds).
+    async duplicate(id) {
+        const source = await this.#backend.getWorkspace(id);
+        if (!source) throw new Error(`Unknown workspace "${id}"`);
+        const doc = await this.store.open(id);
+        await doc.flush?.();
+        const copy = await this.create(`${source.title} (cópia)`);
+        await this.#backend.putDocument(copy.id, doc.snapshot());
+        return copy;
+    }
+
+    //Test support: wipes everything this host stored.
+    async destroy() { await this.#backend.close(); await new Promise(resolve => { const r = indexedDB.deleteDatabase(this.#dbName); r.onsuccess = r.onerror = r.onblocked = resolve; }); }
+}

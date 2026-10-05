@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ultima Agora</title>
+    <style>html, body { height: 100%; margin: 0; } agora-shell { display: flex; height: 100%; }</style>
+</head>
+<body>
+    <agora-shell></agora-shell>
+    <script type="module">
+        import { ComponentRegistry } from './core/registry/component_registry.js';
+        import { registerCoreComponents } from './components/catalog.js';
+        import { DevHost } from './adapters/dev/dev_host.js';
+        import './ui/shell/agora-shell.js';
+
+        const registry = new ComponentRegistry();
+        await registerCoreComponents(registry);
+        const shell = document.querySelector('agora-shell');
+        await shell.init({ host: new DevHost(), registry });
+    </script>
+</body>
+</html>

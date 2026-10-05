@@ -19,6 +19,16 @@ export class ComponentRegistry extends EventTarget {
         this.dispatchEvent(new CustomEvent('registered', { detail: { name: manifest.name } }));
     }
 
+    //Fetches a .manifest.json and registers it; the module path in the manifest is relative to the manifest.
+    async registerFromUrl(manifestUrl) {
+        const url = new URL(manifestUrl, document.baseURI);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Could not load manifest ${url}: HTTP ${response.status}`);
+        const manifest = await response.json();
+        this.register({ manifest, load: () => import(new URL(manifest.module, url)) });
+        return manifest;
+    }
+
     unregister(name) {
         if (this.#definitions.delete(name)) this.dispatchEvent(new CustomEvent('unregistered', { detail: { name } }));
     }

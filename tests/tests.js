@@ -4,6 +4,14 @@ import { AgoraComponent } from '../core/components/agora_component.js';
 import { validateManifest, validateConfig } from '../core/registry/manifest.js';
 import { ComponentRegistry } from '../core/registry/component_registry.js';
 import { MemoryStateStore } from '../collaboration/document/memory_state_store.js';
+import { Layout } from '../core/workspace/layout.js';
+import { Workspace } from '../core/workspace/workspace.js';
+import { DevHost } from '../adapters/dev/dev_host.js';
+import { renderMarkdown } from '../components/markdown/markdown.js';
+import { registerCoreComponents } from '../components/catalog.js';
+import '../ui/workspace/agora-workspace.js';
+import '../ui/inspector/agora-inspector.js';
+import '../ui/palette/agora-palette.js';
 
 //Zero-dependency test runner (same shape as the UltimaJS one): each test throws (via assert) on failure.
 
@@ -191,12 +199,16 @@ test('invokeAction rejects actions missing from the manifest', async () => {
     throws(() => element.invokeAction('nope'), 'unknown action');
 });
 
-test('onDispose runs when the element is removed', async () => {
+test('dispose() runs onDispose; moving the element in the DOM does not', async () => {
     const { element } = await create({});
     await mountAndLoad(element);
     let disposed = 0;
     element.onDispose = () => disposed++;
-    element.remove();
+    const holder = document.createElement('div');
+    document.body.append(holder);
+    holder.append(element);
+    assert(disposed === 0, 'a DOM move must not dispose');
+    element.dispose();
     assert(disposed === 1);
 });
 
@@ -233,6 +245,15 @@ test('transact groups changes into one undo/redo step', async () => {
     assert(doc.get('instances.a').type === 'x' && doc.get('connections.c1').from === 'a');
 });
 
+test('onHistory fires when a transaction closes, not while it is open', async () => {
+    const doc = await openDoc();
+    const seen = [];
+    doc.onHistory(() => seen.push(doc.canUndo));
+    doc.transact('t', () => { doc.set('a', 1); doc.set('b', 2); assert(seen.length === 0, 'fired inside the transaction'); });
+    doc.undo();
+    assert(seen.join() === 'true,false', seen.join());
+});
+
 test('a new change after undo clears the redo stack', async () => {
     const doc = await openDoc();
     doc.transact('a', () => doc.set('x', 1));
@@ -255,6 +276,334 @@ test('snapshot and restore round-trip the document', async () => {
     doc.set('meta.title', 'Other');
     doc.restore(snapshot);
     assert(doc.get('meta.title') === 'T' && !doc.canUndo);
+});
+
+// --- layout ---
+
+const shape = (layout, id = layout.rootId) => {
+    const panel = layout.panel(id);
+    if (!panel) return null;
+    return panel.kind === 'tabs' ? `[${panel.tabs.join(',')}]` : `${panel.dir === 'row' ? 'R' : 'C'}(${panel.children.map(c => shape(layout, c)).join(' ')})`;
+};
+
+test('layout: first instance creates the root tabs panel; center adds tabs', async () => {
+    const layout = new Layout(await openDoc());
+    layout.place('a'); layout.place('b');
+    assert(shape(layout) === '[a,b]');
+});
+
+test('layout: edge placement splits the target panel on that side', async () => {
+    const layout = new Layout(await openDoc());
+    const first = layout.place('a');
+    layout.place('b', { panelId: first, side: 'right' });
+    layout.place('c', { panelId: first, side: 'top' });
+    assert(shape(layout) === 'R(C([c] [a]) [b])', shape(layout));
+});
+
+test('layout: removing an instance collapses empty panels and splits', async () => {
+    const layout = new Layout(await openDoc());
+    const first = layout.place('a');
+    layout.place('b', { panelId: first, side: 'right' });
+    layout.place('c', { panelId: first, side: 'bottom' });
+    layout.remove('c');
+    assert(shape(layout) === 'R([a] [b])', shape(layout));
+    layout.remove('b');
+    assert(shape(layout) === '[a]');
+    layout.remove('a');
+    assert(layout.rootId === null && layout.panelIds().length === 0);
+});
+
+test('layout: move re-docks an instance and is one undo step', async () => {
+    const doc = await openDoc();
+    const layout = new Layout(doc);
+    const first = layout.place('a');
+    layout.place('b');
+    layout.move('b', { panelId: first, side: 'right' });
+    assert(shape(layout) === 'R([a] [b])', shape(layout));
+    doc.undo();
+    assert(shape(layout) === '[a,b]', shape(layout));
+});
+
+test('layout: moving the only tab of a panel onto its own edge changes nothing', async () => {
+    const layout = new Layout(await openDoc());
+    const first = layout.place('a');
+    layout.move('a', { panelId: first, side: 'left' });
+    assert(shape(layout) === '[a]');
+});
+
+test('layout: ratio is clamped, reorderTab moves a tab', async () => {
+    const layout = new Layout(await openDoc());
+    const first = layout.place('a');
+    layout.place('b', { panelId: first, side: 'right' });
+    layout.setRatio(layout.rootId, 5);
+    assert(layout.panel(layout.rootId).ratio === 0.9);
+    layout.place('c', { panelId: first }); layout.reorderTab(first, 'c', 0);
+    assert(layout.panel(first).tabs.join() === 'c,a');
+});
+
+// --- workspace controller ---
+
+const widgetManifest = { name: 'test-widget', tag: 'test-widget', title: 'Widget', version: '1.2.0', module: './w.js', config: { size: { type: 'integer', default: 1, min: 1, max: 3 } } };
+const newWorkspace = async () => {
+    const registry = new ComponentRegistry();
+    registry.register({ manifest: widgetManifest, load: loader() });
+    const doc = await openDoc();
+    return new Workspace({ doc, registry, user: { id: 'urn:user:t' } });
+};
+
+test('workspace: addInstance records the instance and places it, as one undo step', async () => {
+    const workspace = await newWorkspace();
+    const id = workspace.addInstance('test-widget', { config: { size: 2 } });
+    const record = workspace.instance(id);
+    assert(record.type === 'test-widget' && record.typeVersion === '1.2.0' && record.config.size === 2 && record.createdBy === 'urn:user:t');
+    assert(workspace.layout.instanceIds().join() === id);
+    workspace.doc.undo();
+    assert(workspace.instances().length === 0 && workspace.layout.rootId === null);
+});
+
+test('workspace: unknown type and invalid config are rejected before anything is written', async () => {
+    const workspace = await newWorkspace();
+    throws(() => workspace.addInstance('nope'), 'not registered');
+    throws(() => workspace.addInstance('test-widget', { config: { size: 99 } }), 'out of range');
+    assert(workspace.instances().length === 0 && !workspace.doc.canUndo === (workspace.doc.canUndo === false));
+});
+
+test('workspace: setConfig applies valid patches per field and returns errors for invalid ones', async () => {
+    const workspace = await newWorkspace();
+    const id = workspace.addInstance('test-widget');
+    assert(workspace.setConfig(id, { size: 3 }).length === 0 && workspace.instance(id).config.size === 3);
+    assert(workspace.setConfig(id, { size: 0 }).length === 1 && workspace.instance(id).config.size === 3);
+});
+
+test('workspace: removeInstance is undoable and keeps shared text for the undo', async () => {
+    const workspace = await newWorkspace();
+    const id = workspace.addInstance('test-widget');
+    workspace.sharedText(id).setText('hello');
+    workspace.removeInstance(id);
+    assert(workspace.instance(id) === null && workspace.layout.rootId === null);
+    workspace.doc.undo();
+    assert(workspace.instance(id) && workspace.sharedText(id).getText() === 'hello');
+});
+
+test('workspace: sharedText notifies on change', async () => {
+    const workspace = await newWorkspace();
+    const id = workspace.addInstance('test-widget');
+    const text = workspace.sharedText(id);
+    const seen = [];
+    text.onChange(value => seen.push(value));
+    text.setText('a'); text.setText('ab');
+    assert(seen.join() === 'a,ab');
+});
+
+test('workspace: a document from a newer schema is read-only', async () => {
+    const doc = await openDoc();
+    doc.set('meta.schemaVersion', 99);
+    const registry = new ComponentRegistry();
+    registry.register({ manifest: widgetManifest, load: loader() });
+    const workspace = new Workspace({ doc, registry, user: { id: 'u' } });
+    assert(workspace.readOnly);
+    throws(() => workspace.addInstance('test-widget'), 'read-only');
+});
+
+// --- persistence (IndexedDB) ---
+
+const newHost = () => new DevHost({ dbName: `agora-test-${crypto.randomUUID()}` });
+
+test('dev host: a document survives closing and reopening the workspace', async () => {
+    const host = newHost();
+    const meta = await host.create('Persistente');
+    const doc = await host.store.open(meta.id);
+    const workspace = new Workspace({ doc, registry: Object.assign(new ComponentRegistry(), {}), user: host.identity });
+    workspace.registry.register({ manifest: widgetManifest, load: loader() });
+    const id = workspace.addInstance('test-widget', { config: { size: 2 } });
+    workspace.sharedText(id).setText('nota');
+    await doc.flush();
+    assert(doc.status === 'synced', doc.status);
+
+    host.store.forget(meta.id);                          //simulates a fresh page load
+    const reopened = await host.store.open(meta.id);
+    const again = new Workspace({ doc: reopened, registry: workspace.registry, user: host.identity });
+    assert(again.instance(id).config.size === 2 && again.sharedText(id).getText() === 'nota' && again.layout.instanceIds().join() === id);
+    await host.destroy();
+});
+
+test('dev host: catalog creates, renames, lists, archives and duplicates', async () => {
+    const host = newHost();
+    const a = await host.create('A');
+    await host.rename(a.id, 'A2');
+    assert((await host.list())[0].title === 'A2');
+    const doc = await host.store.open(a.id);
+    doc.set('meta.title', 'conteúdo');
+    const copy = await host.duplicate(a.id);
+    assert(copy.id !== a.id && copy.title === 'A2 (cópia)');
+    host.store.forget(copy.id);
+    assert((await host.store.open(copy.id)).get('meta.title') === 'conteúdo');
+    await host.archive(a.id);
+    assert((await host.list()).map(w => w.id).join() === copy.id);
+    await host.destroy();
+});
+
+// --- markdown ---
+
+test('markdown renders the supported constructs', () => {
+    const html = renderMarkdown('# Title\n\nSome **bold** and *italic* with `code`.\n\n- a\n- b\n\n1. one\n\n[site](https://example.com)');
+    for (const fragment of ['<h1>Title</h1>', '<strong>bold</strong>', '<em>italic</em>', '<code>code</code>', '<ul>', '<li>b</li>', '<ol>', 'href="https://example.com"']) {
+        assert(html.includes(fragment), `missing ${fragment} in ${html}`);
+    }
+});
+
+test('markdown never lets input become markup', () => {
+    const html = renderMarkdown('<script>alert(1)</script> <img src=x onerror=alert(1)>\n\n[x](javascript:alert(1))\n\n[y](https://a.com/"onmouseover="alert(1))');
+    assert(!html.includes('<script') && !html.includes('<img') && !html.includes('href="javascript'), html);
+    const probe = document.createElement('div');
+    probe.innerHTML = html;
+    const handlers = [...probe.querySelectorAll('*')].flatMap(e => e.getAttributeNames().filter(n => n.startsWith('on')));
+    assert(handlers.length === 0, `event handler attributes parsed: ${handlers}`);
+    assert([...probe.querySelectorAll('a')].every(a => /^https?:/.test(a.getAttribute('href'))));
+});
+
+test('markdown code blocks keep their content literal', () => {
+    const html = renderMarkdown('```\n**not bold** <b>\n```');
+    assert(html.includes('<pre><code>**not bold** &lt;b&gt;</code></pre>'), html);
+});
+
+// --- shell parts: workspace view, inspector, palette ---
+
+const mountView = async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const doc = await openDoc();
+    const workspace = new Workspace({ doc, registry, user: { id: 'urn:user:t' } });
+    const view = document.createElement('agora-workspace');
+    view.style.cssText = 'display:block;width:600px;height:300px';
+    document.body.append(view);
+    assert(await settleOrTimeout(view.whenLoaded()), 'view never loaded');
+    view.workspace = workspace;
+    await wait(50);
+    return { view, workspace, registry };
+};
+const tabLabels = view => [...view.rootNode.querySelectorAll('.tab button.label')].map(b => b.textContent);
+const instanceElement = (view, id) => view.rootNode.querySelector(`[data-instance-id="${id}"]`);
+
+test('view: shows the empty state, then one tab per added instance with a live component inside', async () => {
+    const { view, workspace } = await mountView();
+    assert(view.rootNode.querySelector('.empty'), 'no empty state');
+    const text = workspace.addInstance('ultima-text', { config: { text: 'olá' } });
+    workspace.addInstance('ultima-notes');
+    await wait(300);
+    assert(tabLabels(view).join() === 'Texto,Notas', tabLabels(view).join());
+    const element = instanceElement(view, text);
+    assert(element && await settleOrTimeout(element.whenLoaded()));
+    assert(element.rootNode.querySelector('p').textContent === 'olá');
+});
+
+test('view: a config change reaches the live component without repainting the panels', async () => {
+    const { view, workspace } = await mountView();
+    const id = workspace.addInstance('ultima-text', { config: { text: 'um' } });
+    await wait(300);
+    const element = instanceElement(view, id);
+    const panel = view.rootNode.querySelector('.panel');
+    workspace.setConfig(id, { text: 'dois' });
+    await wait(50);
+    assert(element.rootNode.querySelector('p').textContent === 'dois');
+    assert(view.rootNode.querySelector('.panel') === panel, 'panels were rebuilt');
+});
+
+test('view: removing an instance disposes its element; undo brings a fresh one back', async () => {
+    const { view, workspace } = await mountView();
+    const id = workspace.addInstance('ultima-text');
+    await wait(300);
+    const element = instanceElement(view, id);
+    let disposed = 0;
+    element.onDispose = () => disposed++;
+    workspace.removeInstance(id);
+    await wait(50);
+    assert(disposed === 1 && !instanceElement(view, id) && view.rootNode.querySelector('.empty'));
+    workspace.doc.undo();
+    await wait(300);
+    assert(instanceElement(view, id) && instanceElement(view, id) !== element);
+});
+
+test('view: moving an instance between panels keeps the same element and does not dispose it', async () => {
+    const { view, workspace } = await mountView();
+    const a = workspace.addInstance('ultima-text');
+    await wait(300);
+    const b = workspace.addInstance('ultima-notes');           //a new arrival becomes the active tab, so it is mounted
+    await wait(300);
+    const notes = instanceElement(view, b);
+    notes.onDispose = () => { throw new Error('disposed on move'); };
+    workspace.moveInstance(b, { panelId: workspace.layout.findPanelOf(b), side: 'right' });
+    await wait(300);
+    assert(view.rootNode.querySelectorAll('.panel').length === 2);
+    assert(instanceElement(view, b) === notes && instanceElement(view, a));
+});
+
+test('view: dropping a palette item on a panel edge splits it; read-only workspaces refuse drops', async () => {
+    const { view, workspace } = await mountView();
+    workspace.addInstance('ultima-text');
+    await wait(300);
+    const panel = view.rootNode.querySelector('.panel');
+    const rect = panel.getBoundingClientRect();
+    const transfer = new DataTransfer();
+    transfer.setData('application/x-agora-component', 'ultima-notes');
+    for (const type of ['dragover', 'drop']) {
+        panel.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer, clientX: rect.right - 4, clientY: rect.top + rect.height / 2 }));
+    }
+    await wait(300);
+    assert(view.rootNode.querySelectorAll('.panel').length === 2 && workspace.instances().length === 2);
+});
+
+test('view: an unknown component type is kept as a notice and its config is preserved', async () => {
+    const { view, workspace } = await mountView();
+    workspace.doc.set('instances.cmp-x', { type: 'ghost-widget', typeVersion: '9.0.0', label: 'Fantasma', config: { keep: 1 }, createdBy: 'u', createdVia: 'palette' });
+    workspace.layout.place('cmp-x');
+    await wait(300);
+    assert(view.rootNode.querySelector('.notice.error')?.textContent.includes('ghost-widget'));
+    assert(workspace.instance('cmp-x').config.keep === 1);
+});
+
+test('inspector: builds fields from the manifest and rejects invalid values', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const workspace = new Workspace({ doc: await openDoc(), registry, user: { id: 'u' } });
+    const id = workspace.addInstance('ultima-text', { config: { text: 'x' } });
+    const inspector = document.createElement('agora-inspector');
+    document.body.append(inspector);
+    assert(await settleOrTimeout(inspector.whenLoaded()));
+    inspector.workspace = workspace;
+    inspector.selectedId = id;
+    await wait(50);
+    const root = inspector.rootNode;
+    assert(root.querySelector('textarea') && root.querySelector('select'), 'fields not generated');
+    const select = root.querySelector('select');
+    select.value = 'large';
+    select.dispatchEvent(new Event('change'));
+    assert(workspace.instance(id).config.size === 'large');
+    assert(workspace.setConfig(id, { size: 'huge' }).length === 1 && workspace.instance(id).config.size === 'large');
+    inspector.selectedId = null;
+    await wait(50);
+    assert(root.querySelector('.empty'));
+});
+
+test('palette: lists registered components, filters by search and announces additions', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const palette = document.createElement('agora-palette');
+    document.body.append(palette);
+    assert(await settleOrTimeout(palette.whenLoaded()));
+    palette.registry = registry;
+    await wait(50);
+    const items = () => [...palette.rootNode.querySelectorAll('button.item')];
+    assert(items().length === 2);
+    const search = palette.rootNode.querySelector('#search');
+    search.value = 'markdown'; search.dispatchEvent(new Event('input'));
+    assert(items().length === 1 && items()[0].textContent.startsWith('Notas'));
+    let added = null;
+    palette.addEventListener('palette-add', event => { added = event.detail.type; });
+    items()[0].click();
+    assert(added === 'ultima-notes');
+    palette.canAdd = false;
+    assert(items().every(b => b.disabled));
 });
 
 // --- runner ---
@@ -281,4 +630,5 @@ console.error = originalConsoleError;
 const summary = `${tests.length - failed}/${tests.length} passed`;
 document.getElementById('results').textContent = lines.join('\n');
 document.getElementById('summary').textContent = summary;
-document.title = (failed ? 'FAIL ' : 'PASS ') + summary;
+const failures = lines.filter(l => l.startsWith('FAIL ')).map(l => l.slice(5).split('\n')[0]);
+document.title = (failed ? 'FAIL ' : 'PASS ') + summary + (failed ? ` | ${failures.join('; ')}` : '');

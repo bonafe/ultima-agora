@@ -95,9 +95,10 @@ export const AgoraInstance = (Base) => class extends Base {
         this.#pendingInputs.clear();
     }
 
-    disconnectedCallback() {
-        super.disconnectedCallback();
-        if (!this.isConnected) this.#safely(() => this.onDispose(), 'onDispose()');
+    //Called by the shell when the instance is removed for good. Not tied to disconnectedCallback: moving an
+    //element between panels disconnects it too, and that must not look like a removal.
+    dispose() {
+        this.#safely(() => this.onDispose(), 'onDispose()');
     }
 
     //Extension points

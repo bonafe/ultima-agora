@@ -7,6 +7,12 @@ import { MemoryStateStore } from '../collaboration/document/memory_state_store.j
 import { Layout } from '../core/workspace/layout.js';
 import { Workspace } from '../core/workspace/workspace.js';
 import { DevHost } from '../adapters/dev/dev_host.js';
+import { Y, syncProtocol, awarenessProtocol, encoding, decoding } from '../vendor/yjs/yjs.js';
+import { YjsWorkspaceDoc } from '../collaboration/document/yjs_state_store.js';
+import { YjsStateStore } from '../collaboration/providers/yjs_store.js';
+import { SyncProvider } from '../collaboration/providers/sync_provider.js';
+import { YjsPresence } from '../collaboration/presence/presence.js';
+import { IndexedDbBackend } from '../collaboration/providers/indexeddb_persistence.js';
 import { uuid } from '../core/ids.js';
 import { TypeRegistry, registerCoreTypes } from '../core/connections/types.js';
 import { BusError } from '../core/connections/bus.js';
@@ -448,11 +454,12 @@ test('dev host: catalog creates, renames, lists, archives and duplicates', async
     await host.rename(a.id, 'A2');
     assert((await host.list())[0].title === 'A2');
     const doc = await host.store.open(a.id);
-    doc.set('meta.title', 'conteúdo');
+    doc.set('meta.note', 'conteúdo');
     const copy = await host.duplicate(a.id);
     assert(copy.id !== a.id && copy.title === 'A2 (cópia)');
     host.store.forget(copy.id);
-    assert((await host.store.open(copy.id)).get('meta.title') === 'conteúdo');
+    const copied = await host.store.open(copy.id);
+    assert(copied.get('meta.note') === 'conteúdo' && copied.get('meta.title') === 'A2 (cópia)', 'content is copied and the title is the copy\'s');
     await host.archive(a.id);
     assert((await host.list()).map(w => w.id).join() === copy.id);
     await host.destroy();
@@ -958,6 +965,279 @@ test('M2 flow: the inspector offers connections and actions, and connects throug
     assert([...inspector.rootNode.querySelectorAll('button.action')].some(b => b.textContent === 'Mostrar como grafo'));
 });
 
+// --- the document contract, for both implementations ---
+
+const docKinds = [['memory', async () => openDoc()], ['yjs', async () => new YjsWorkspaceDoc()]];
+
+for (const [kind, makeDoc] of docKinds) {
+    test(`${kind} doc: get/set by path returns copies, and delete removes`, async () => {
+        const doc = await makeDoc();
+        doc.set('instances.a.config', { depth: 2, tags: ['x'] });
+        const config = doc.get('instances.a.config');
+        config.depth = 99; config.tags.push('y');
+        assert(doc.get('instances.a.config.depth') === 2 && doc.get('instances.a.config.tags').length === 1);
+        doc.delete('instances.a.config.depth');
+        assert(doc.get('instances.a.config.depth') === undefined && doc.get('instances.zzz') === undefined);
+    });
+
+    test(`${kind} doc: onChange fires for changes at, under and above the watched path`, async () => {
+        const doc = await makeDoc();
+        const seen = [];
+        doc.onChange('instances.a', path => seen.push(path));
+        doc.set('instances.a.config.depth', 1);
+        doc.set('instances.b.config.depth', 1);
+        doc.set('instances', {});
+        assert(seen.length === 2, JSON.stringify(seen));
+    });
+
+    test(`${kind} doc: a transaction is one undo step, redo replays it, a new change drops redo`, async () => {
+        const doc = await makeDoc();
+        doc.transact('create', () => { doc.set('instances.a', { type: 'x' }); doc.set('connections.c1', { from: 'a' }); });
+        doc.set('meta.title', 'T');
+        assert(doc.undo() && doc.get('meta.title') === undefined && doc.get('instances.a'));
+        assert(doc.undo() && doc.get('instances.a') === undefined && doc.get('connections.c1') === undefined);
+        assert(!doc.undo() && doc.canRedo);
+        doc.redo();
+        assert(doc.get('instances.a').type === 'x' && doc.get('connections.c1').from === 'a');
+        doc.undo();
+        doc.transact('other', () => doc.set('meta.title', 'U'));
+        assert(!doc.canRedo);
+    });
+
+    test(`${kind} doc: nested transactions join the outer one; onHistory fires when a step closes`, async () => {
+        const doc = await makeDoc();
+        const seen = [];
+        doc.onHistory(() => seen.push(doc.canUndo));
+        doc.transact('outer', () => { doc.set('meta.a', 1); doc.transact('inner', () => doc.set('meta.b', 2)); assert(seen.length === 0, 'fired inside'); });
+        await wait(0);
+        doc.undo();
+        await wait(0);                                          //the Yjs store coalesces history notifications
+        assert(doc.get('meta.a') === undefined && doc.get('meta.b') === undefined && !doc.canUndo && seen.join() === 'true,false', seen.join());
+    });
+
+    test(`${kind} doc: snapshot and restore round-trip, and the text handle edits and notifies`, async () => {
+        const doc = await makeDoc();
+        doc.set('meta.title', 'T');
+        doc.text('content.a.text').setText('hello');
+        const snapshot = doc.snapshot();
+        const other = await makeDoc();
+        other.restore(snapshot);
+        assert(other.get('meta.title') === 'T' && other.text('content.a.text').getText() === 'hello' && !other.canUndo);
+        const seen = [];
+        const text = doc.text('content.a.text');
+        text.onChange(value => seen.push(value));
+        text.setText('hello world');
+        assert(text.getText() === 'hello world' && seen.at(-1) === 'hello world');
+    });
+}
+
+test('yjs doc: roles are enforced locally the same way the server enforces them', () => {
+    const doc = new YjsWorkspaceDoc();
+    doc.set('instances.i1', { label: 'x' });
+    doc.role = 'participant';
+    doc.text('content.i1.text').setText('allowed');
+    throws(() => doc.set('instances.i1.label', 'no'), 'may not change "instances"');
+    doc.role = 'viewer';
+    throws(() => doc.text('content.i1.text').setText('no'), 'may not change "content"');
+    throws(() => doc.set('meta.title', 'no'), 'viewer');
+    assert(doc.get('instances.i1.label') === 'x' && doc.text('content.i1.text').getText() === 'allowed', 'reading always works');
+});
+
+test('workspace: a viewer opening an empty document writes nothing (the bug that made the server drop viewers)', () => {
+    const doc = new YjsWorkspaceDoc();
+    doc.role = 'viewer';
+    const registry = new ComponentRegistry();
+    const workspace = new Workspace({ doc, registry, user: { id: 'v' } });
+    assert(workspace.readOnly && !workspace.canEditContent && doc.get('meta.schemaVersion') === undefined);
+    throws(() => workspace.setTitle('x'), 'cannot change the composition');
+});
+
+// --- Yjs: merging, offline, presence ---
+
+//A server stand-in speaking the same protocol as server/agora-sync, with a switch for the network
+class Hub {
+    doc = new Y.Doc();
+    awareness = new awarenessProtocol.Awareness(this.doc);
+    up = true;
+    #connections = new Set();
+    constructor() {
+        this.doc.on('update', (update, origin) => this.#broadcast(0, e => syncProtocol.writeUpdate(e, update), origin));
+        this.awareness.on('update', ({ added, updated, removed }, origin) => {
+            if (origin?.clientIds) for (const id of [...added, ...updated]) origin.clientIds.add(id);
+            const changed = [...added, ...updated, ...removed];
+            this.#broadcast(1, e => encoding.writeVarUint8Array(e, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed)), origin);
+        });
+    }
+    #drop(connection) {
+        this.#connections.delete(connection);
+        awarenessProtocol.removeAwarenessStates(this.awareness, [...connection.clientIds], 'server');     //tell everyone else they left
+    }
+    #broadcast(type, write, except) {
+        for (const c of this.#connections) {
+            if (c === except) continue;
+            const e = encoding.createEncoder(); encoding.writeVarUint(e, type); write(e);
+            queueMicrotask(() => c.client.onmessage?.(encoding.toUint8Array(e)));
+        }
+    }
+    openTransport() {
+        return async () => {
+            if (!this.up) throw new Error('network down');
+            const connection = { client: null, clientIds: new Set() };
+            const client = {
+                onopen: null, onmessage: null, onclose: null,
+                send: bytes => queueMicrotask(() => this.#serve(connection, bytes)),
+                close: () => { this.#drop(connection); queueMicrotask(() => client.onclose?.({ code: 1000 })); },
+            };
+            connection.client = client;
+            this.#connections.add(connection);
+            setTimeout(() => client.onopen?.(), 0);
+            return client;
+        };
+    }
+    #serve(connection, bytes) {
+        if (!this.#connections.has(connection)) return;
+        const decoder = decoding.createDecoder(bytes);
+        const type = decoding.readVarUint(decoder);
+        if (type === 0) {
+            const reply = encoding.createEncoder(); encoding.writeVarUint(reply, 0);
+            const kind = syncProtocol.readSyncMessage(decoder, reply, this.doc, connection);
+            if (encoding.length(reply) > 1) queueMicrotask(() => connection.client.onmessage?.(encoding.toUint8Array(reply)));
+            if (kind === syncProtocol.messageYjsSyncStep1) {       //the server also asks for what the client has
+                const ask = encoding.createEncoder(); encoding.writeVarUint(ask, 0); syncProtocol.writeSyncStep1(ask, this.doc);
+                queueMicrotask(() => connection.client.onmessage?.(encoding.toUint8Array(ask)));
+            }
+        } else if (type === 1) {
+            awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(decoder), connection);
+        }
+    }
+    cut() { this.up = false; for (const c of [...this.#connections]) { this.#drop(c); c.client.onclose?.({ code: 1006 }); } }
+    restore() { this.up = true; }
+}
+
+const client = (hub, user) => {
+    const doc = new YjsWorkspaceDoc();
+    const awareness = new awarenessProtocol.Awareness(doc.ydoc);
+    doc.presence = new YjsPresence(awareness);
+    doc.presence.setLocal({ user: { id: user, name: user } });
+    const provider = new SyncProvider({ ydoc: doc.ydoc, awareness, openTransport: hub.openTransport(), minDelayMs: 20, maxDelayMs: 40 });
+    provider.connect();
+    return { doc, provider, awareness };
+};
+const synced = async (...clients) => { for (let i = 0; i < 100 && !clients.every(c => c.provider.status === 'synced'); i++) await wait(10); await wait(30); };
+
+test('yjs sync: two clients converge through the server, including shared text', async () => {
+    const hub = new Hub();
+    const a = client(hub, 'a'), b = client(hub, 'b');
+    await synced(a, b);
+    a.doc.set('instances.i1', { type: 'ultima-text', label: 'Texto' });
+    a.doc.text('content.i1.text').setText('hello');
+    await wait(60);
+    assert(b.doc.get('instances.i1').label === 'Texto' && b.doc.text('content.i1.text').getText() === 'hello');
+});
+
+test('yjs sync: edits to different fields of the same config merge (R-CONF-1)', async () => {
+    const hub = new Hub();
+    const a = client(hub, 'a'), b = client(hub, 'b');
+    await synced(a, b);
+    a.doc.set('instances.i1', { config: { size: 1, mode: 'x' } });
+    await wait(60);
+    hub.cut(); await wait(10);                                  //both edit while apart
+    a.doc.set('instances.i1.config.size', 3);
+    b.doc.set('instances.i1.config.mode', 'y');
+    hub.restore(); await synced(a, b);
+    for (const { doc } of [a, b]) assert(doc.get('instances.i1.config.size') === 3 && doc.get('instances.i1.config.mode') === 'y', JSON.stringify(doc.get('instances.i1')));
+});
+
+test('yjs sync: typing in different places of the same text merges instead of overwriting', async () => {
+    const hub = new Hub();
+    const a = client(hub, 'a'), b = client(hub, 'b');
+    await synced(a, b);
+    a.doc.text('content.n.text').setText('one two three');
+    await wait(60);
+    hub.cut(); await wait(10);
+    a.doc.text('content.n.text').setText('ONE one two three');
+    b.doc.text('content.n.text').setText('one two three FOUR');
+    hub.restore(); await synced(a, b);
+    assert(a.doc.text('content.n.text').getText() === 'ONE one two three FOUR' && b.doc.text('content.n.text').getText() === 'ONE one two three FOUR', a.doc.text('content.n.text').getText());
+});
+
+test('yjs sync: working offline from the start, then connecting, loses nothing', async () => {
+    const hub = new Hub(); hub.up = false;
+    const a = client(hub, 'a');
+    a.doc.set('instances.i1', { label: 'feito offline' });
+    await wait(60);
+    assert(a.provider.status === 'offline');
+    hub.restore();
+    const b = client(hub, 'b');
+    await synced(a, b);
+    assert(b.doc.get('instances.i1.label') === 'feito offline');
+});
+
+test('yjs undo is per user: undoing mine leaves what the other person did', async () => {
+    const hub = new Hub();
+    const a = client(hub, 'a'), b = client(hub, 'b');
+    await synced(a, b);
+    a.doc.set('meta.fromA', 1); await wait(40);
+    b.doc.set('meta.fromB', 2); await wait(40);
+    a.doc.undo(); await wait(40);
+    assert(b.doc.get('meta.fromA') === undefined && b.doc.get('meta.fromB') === 2 && a.doc.get('meta.fromB') === 2);
+    assert(!a.doc.undo(), 'A has nothing else of their own to undo');
+});
+
+test('yjs presence: peers appear with their state, and vanish when they disconnect', async () => {
+    const hub = new Hub();
+    const a = client(hub, 'a'), b = client(hub, 'b');
+    await synced(a, b);
+    a.doc.presence.setLocal({ focus: 'cmp-1' });
+    await wait(60);
+    const seenByB = b.doc.presence.peers();
+    assert(seenByB.length === 1 && seenByB[0].user.name === 'a' && seenByB[0].focus === 'cmp-1', JSON.stringify(seenByB));
+    a.provider.disconnect();
+    await wait(60);
+    assert(b.doc.presence.peers().length === 0);
+});
+
+test('yjs store: opens from IndexedDB, imports old JSON snapshots and keeps the workspace working', async () => {
+    const backend = new IndexedDbBackend(`agora-test-${uuid()}`);
+    await backend.putDocument('legacy', { meta: { title: 'Antigo' }, instances: { i1: { type: 'ultima-text', label: 'T', config: {} } } });
+    const store = new YjsStateStore({ backend });
+    const doc = await store.open('legacy');
+    assert(doc.get('meta.title') === 'Antigo' && doc.get('instances.i1.label') === 'T');
+
+    doc.set('meta.title', 'Novo'); await doc.flush();
+    store.forget('legacy');
+    const again = await new YjsStateStore({ backend }).open('legacy');
+    assert(again.get('meta.title') === 'Novo' && again.status === 'synced');
+    await backend.close();
+});
+
+test('yjs store: discarding the local copy starts the next open from scratch, and control messages reach listeners', async () => {
+    const backend = new IndexedDbBackend(`agora-test-${uuid()}`);
+    const store = new YjsStateStore({ backend });
+    const doc = await store.open('w');
+    doc.set('meta.title', 'local only'); await doc.flush();
+    const seen = [];
+    doc.onControl(message => seen.push(message.type));
+    doc._control({ type: 'closed', code: 4403 });
+    assert(seen.join() === 'closed');
+    await store.discard('w');
+    assert((await store.open('w')).get('meta.title') === undefined, 'the discarded edit must be gone');
+    await backend.close();
+});
+
+test('yjs doc runs the whole workspace: instances, bus connections, layout and undo', async () => {
+    const registry = new ComponentRegistry();
+    busManifests.forEach(manifest => registry.register({ manifest, load: loader() }));
+    const workspace = new Workspace({ doc: new YjsWorkspaceDoc(), registry, user: { id: 'u' } });
+    const a = workspace.addInstance('test-source'), b = workspace.addInstance('test-sink', { target: { panelId: workspace.layout.defaultPanel(), side: 'right' } });
+    workspace.bus.connect({ instance: a, port: 'text' }, { instance: b, port: 'text' });
+    assert(workspace.layout.instanceIds().length === 2 && workspace.bus.list().length === 1);
+    workspace.removeInstance(b);
+    assert(workspace.bus.list().length === 0);
+    workspace.doc.undo();
+    assert(workspace.bus.list().length === 1 && workspace.instance(b));
+});
+
 // --- runner ---
 
 const originalConsoleLog = console.log;
@@ -982,5 +1262,5 @@ console.error = originalConsoleError;
 const summary = `${tests.length - failed}/${tests.length} passed`;
 document.getElementById('results').textContent = lines.join('\n');
 document.getElementById('summary').textContent = summary;
-const failures = lines.filter(l => l.startsWith('FAIL ')).map(l => l.slice(5).split('\n')[0]);
-document.title = (failed ? 'FAIL ' : 'PASS ') + summary + (failed ? ` | ${failures.join('; ')}` : '');
+const failures = lines.filter(l => l.startsWith('FAIL ')).map(l => l.slice(5).replace(/\n\s+/, ' — '));
+document.title = (failed ? 'FAIL ' : 'PASS ') + summary + (failed ? ` | ${failures.join(' || ')}` : '');

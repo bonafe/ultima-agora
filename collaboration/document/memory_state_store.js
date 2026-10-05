@@ -4,6 +4,8 @@
 //A document is a tree of plain JSON values addressed by dot paths ("instances.cmp-1.config.depth").
 //transact() groups changes into one undoable operation; a write outside transact() is its own operation.
 
+import { LocalPresence } from '../presence/presence.js';
+
 const split = path => (Array.isArray(path) ? path : String(path).split('.')).filter(Boolean);
 
 export class MemoryWorkspaceDoc {
@@ -12,6 +14,9 @@ export class MemoryWorkspaceDoc {
     #undo = [];
     #redo = [];
     #current = null;                        //open transaction: { label, changes: [{ path, before, after }] }
+    presence = new LocalPresence();
+    role = 'owner';
+    onRole() { return () => {}; }
     #status = 'synced';
     #statusListeners = new Set();
 
@@ -23,6 +28,17 @@ export class MemoryWorkspaceDoc {
         for (const fn of [...this.#statusListeners]) { try { fn(value); } catch (error) { console.error('[MemoryWorkspaceDoc] status listener error:', error); } }
     }
     onStatus(fn) { this.#statusListeners.add(fn); return () => this.#statusListeners.delete(fn); }
+
+    //Shared text at `path` (plain string here; the Yjs store merges concurrent edits)
+    text(path) {
+        const keys = split(path);
+        return {
+            ensure: () => {},
+            getText: () => this.get(keys) ?? '',
+            setText: next => this.transact('edit text', () => this.set(keys, next)),
+            onChange: fn => this.onChange(keys, () => fn(this.get(keys) ?? '')),
+        };
+    }
 
     //Fires whenever the undo/redo stacks change (a transaction closes, a bare write, undo, redo).
     #historyListeners = new Set();

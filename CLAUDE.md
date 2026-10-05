@@ -16,6 +16,7 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 ## Commands
 
 - Serve the repo root with any static server (`python3 -m http.server`) and open `/tests/`.
+- Two suites: `tests/run.sh` (browser, headless Chrome) and `cd server/agora-sync && npm test` (server).
 - `tests/run.sh` runs the suite in headless Chrome and exits non-zero on failure (this is what CI runs).
 - Add a test with every bug fix. User-visible changes go in `CHANGELOG.md`.
 
@@ -24,14 +25,16 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 - `vendor/ultima/` — copy of the UltimaJS core. **Do not edit here**: change `../ultima` and re-copy (see `vendor/ultima/README.md`).
 - `core/components/` — `mix.js` (re-export of UltimaJS `mix()`, D-02) and `agora_component.js`.
 - `core/registry/` — manifest validation and `ComponentRegistry`.
-- `collaboration/document/` — `MemoryStateStore`; the Yjs store will implement the same surface (R-STORE-*).
+- `collaboration/document/` — `MemoryStateStore` and `YjsWorkspaceDoc`: the same document API (R-STORE-*). Only `collaboration/` imports `vendor/yjs`.
+- `collaboration/providers/` — IndexedDB, `SyncProvider`, `YjsStateStore`; `collaboration/presence/` — presence.
+- `server/agora-sync/` — the realtime server (Node, its own `package.json`: the *browser app* stays npm-free). `npm test` there; see its README. `tools/vendor-yjs/` rebuilds `vendor/yjs`.
 - `core/workspace/` — `layout.js` (docking tree in the document) and `workspace.js` (the only way to mutate the composition).
-- `collaboration/providers/` — IndexedDB persistence. `adapters/dev/` — `DevHost`, the serverless host.
+- `adapters/dev/` — `DevHost`, the development host (local, or synced with `?sync=`).
 - `components/` — generic catalog (`ultima-text`, `ultima-notes`, markdown renderer). `ui/` — shell, palette, workspace view, inspector.
 - Run the app: serve the root and open `/` (hash route `#/workspace/<id>`).
 - `tests/` — zero-dependency browser tests, same runner shape as UltimaJS.
 
-Planned (see spec 55): `core/{events,connections,permissions}`, `collaboration/presence`, `conference/`.
+Planned (see spec 55): `core/events`, `conference/`.
 
 ## Rules that matter
 

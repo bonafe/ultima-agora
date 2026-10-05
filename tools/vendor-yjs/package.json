@@ -1,0 +1,9 @@
+{
+  "name": "agora-vendor-yjs",
+  "private": true,
+  "description": "Builds vendor/yjs/yjs.js, the prebuilt ESM bundle the browser app copies in (D-06). Run once per upgrade; not needed to run the app.",
+  "type": "module",
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": { "yjs": "13.6.27", "y-protocols": "1.0.6", "lib0": "0.2.114" },
+  "devDependencies": { "esbuild": "0.25.0" }
+}

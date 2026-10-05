@@ -4,7 +4,7 @@
 #
 # Unlike the UltimaJS runner this does not use --virtual-time-budget: the suite touches IndexedDB, whose
 # real I/O virtual time does not wait for. Instead it polls the page title, which tests.js sets to
-# "PASS n/n passed" or "FAIL k/n passed | failing test; failing test".
+# "PASS n/n passed" or "FAIL k/n passed | test — message || test — message".
 set -u
 cd "$(dirname "$0")/.."
 
@@ -36,5 +36,5 @@ except Exception:
 done
 
 [ -n "$TITLE" ] || { echo "Timed out: the suite never finished" >&2; exit 1; }
-echo "$TITLE" | sed 's/ | /\n  failing: /;s/; /\n  failing: /g'
+echo "$TITLE" | sed 's/ | /\n  failing: /;s/ || /\n  failing: /g'
 [ "${TITLE%% *}" = "PASS" ]

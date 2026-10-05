@@ -17,9 +17,13 @@ export class AgoraInspector extends ReactiveComponent {
     set workspace(workspace) {
         this.#stop?.();
         this.#workspace = workspace;
-        this.#stop = workspace?.doc.onChange('', path => {
-            if (!path.startsWith('content.') && !this.rootNode.activeElement?.matches?.('input, textarea, select')) this.#queuePaint();
-        });
+        const stops = [
+            workspace?.doc.onChange('', path => {
+                if (!path.startsWith('content.') && !this.rootNode.activeElement?.matches?.('input, textarea, select')) this.#queuePaint();
+            }),
+            workspace?.onRole(() => this.#queuePaint()),
+        ];
+        this.#stop = () => stops.forEach(stop => stop?.());
         this.#queuePaint();
     }
 

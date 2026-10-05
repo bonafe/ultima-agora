@@ -31,3 +31,4 @@ button:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-
 .hint { position: absolute; z-index: 10; pointer-events: none; background: color-mix(in srgb, var(--agora-accent, #2a6df4) 28%, transparent); border: 2px solid var(--agora-accent, #2a6df4); }
 .hint.center { inset: 0; } .hint.left { inset: 0 50% 0 0; } .hint.right { inset: 0 0 0 50%; }
 .hint.top { inset: 0 0 50% 0; } .hint.bottom { inset: 50% 0 0 0; }
+.peer-dot { min-width: .7rem; height: .7rem; border-radius: 50%; margin-right: .3rem; display: inline-grid; place-items: center; font-size: .6rem; color: #fff; align-self: center; }

@@ -10,6 +10,9 @@ import { validateConfig } from '../registry/manifest.js';
 import { Bus } from '../connections/bus.js';
 
 export const SCHEMA_VERSION = 1;
+//Roles (docs 09, 9.4): who may change the composition, and who may edit authored content
+const COMPOSE_ROLES = new Set(['owner', 'editor']);
+const EDIT_CONTENT_ROLES = new Set(['owner', 'editor', 'participant']);
 import { uuid } from '../ids.js';
 const newInstanceId = () => `cmp-${uuid().slice(0, 8)}`;
 
@@ -26,7 +29,8 @@ export class Workspace {
         this.#user = user;
         this.#layout = new Layout(doc);
         this.#bus = new Bus(this);
-        if (doc.get('meta.schemaVersion') === undefined) doc.set('meta.schemaVersion', SCHEMA_VERSION);
+        //Only someone who may compose seeds the schema version; a viewer opening an empty (not yet synced) document must write nothing
+        if (doc.get('meta.schemaVersion') === undefined && this.canCompose) doc.set('meta.schemaVersion', SCHEMA_VERSION);
     }
 
     get doc() { return this.#doc; }
@@ -34,8 +38,15 @@ export class Workspace {
     get bus() { return this.#bus; }
     get registry() { return this.#registry; }
     get user() { return this.#user; }
+    //The user's role comes from the host/server and can change while the workspace is open (R-PERM-4)
+    get role() { return this.#doc.role ?? 'owner'; }
+    onRole(fn) { return this.#doc.onRole?.(fn) ?? (() => {}); }
     //R-DOC-1: a document from a newer schema than we know is opened read-only.
-    get readOnly() { return (this.#doc.get('meta.schemaVersion') ?? 0) > SCHEMA_VERSION; }
+    get newerSchema() { return (this.#doc.get('meta.schemaVersion') ?? 0) > SCHEMA_VERSION; }
+    get canCompose() { return !this.newerSchema && COMPOSE_ROLES.has(this.role); }
+    get canEditContent() { return !this.newerSchema && EDIT_CONTENT_ROLES.has(this.role); }
+    //The UI treats "cannot compose" as read-only for the structure; the server enforces the same rules
+    get readOnly() { return !this.canCompose; }
 
     instance(id) {
         const record = this.#doc.get(['instances', id]);
@@ -47,7 +58,8 @@ export class Workspace {
     }
 
     #assertWritable() {
-        if (this.readOnly) throw new Error('This workspace was made by a newer version and is read-only');
+        if (this.newerSchema) throw new Error('This workspace was made by a newer version and is read-only');
+        if (!this.canCompose) throw new Error(`Your role (${this.role}) cannot change the composition of this workspace`);
     }
 
     //Creates an instance and places it in the layout, as one undoable operation.
@@ -65,6 +77,7 @@ export class Workspace {
                 createdBy: this.#user.id, createdVia,
             });
             this.#layout.place(id, target);
+            if (manifest.capabilities?.includes('shared-content')) this.#doc.text(['content', id, 'text']).ensure();   //created once, here, so two people never create it concurrently
         });
         return id;
     }
@@ -154,16 +167,21 @@ export class Workspace {
     }
 
     get title() { return this.#doc.get('meta.title') ?? ''; }
-    setTitle(title) { this.#doc.transact('title', () => this.#doc.set('meta.title', title)); }
+    setTitle(title) { this.#assertWritable(); this.#doc.transact('title', () => this.#doc.set('meta.title', title)); }
 
     //Collaborative text of an instance, behind the SharedText interface (R-NOTES-4) so that a Yjs-backed
     //version can replace it. Plain string for now.
     sharedText(id) {
-        const path = ['content', id, 'text'];
+        const text = this.#doc.text(['content', id, 'text']);
+        const workspace = this;
         return {
-            getText: () => this.#doc.get(path) ?? '',
-            setText: text => { this.#assertWritable(); this.#doc.transact(`edit ${id}`, () => this.#doc.set(path, text)); },
-            onChange: fn => this.#doc.onChange(path, () => fn(this.#doc.get(path) ?? '')),
+            getText: () => text.getText(),
+            setText: value => {
+                if (!workspace.canEditContent) throw new Error(`Your role (${workspace.role}) cannot edit this content`);
+                text.setText(value);
+            },
+            onChange: fn => text.onChange(fn),
+            get canEdit() { return workspace.canEditContent; },
         };
     }
 

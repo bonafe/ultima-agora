@@ -14,7 +14,7 @@ const MENU_ITEMS = [['right', 'Dividir à direita'], ['bottom', 'Dividir abaixo'
 
 export class AgoraWorkspaceView extends ReactiveComponent {
     #workspace = null;
-    #stop = null;
+    #stop = [];
     #elements = new Map();          //instanceId -> { element, body }
     #active = new Map();            //panelId -> instanceId (view state)
     #tabsSeen = new Map();          //panelId -> Set of instanceIds already shown there
@@ -28,11 +28,18 @@ export class AgoraWorkspaceView extends ReactiveComponent {
 
     get workspace() { return this.#workspace; }
     set workspace(workspace) {
-        this.#stop?.();
+        this.#stop.forEach(stop => stop());
         this.#elements.forEach((entry, id) => { entry.element?.dispose?.(); this.#workspace?.bus.detach(id); });
         this.#elements.clear();
         this.#workspace = workspace;
-        this.#stop = workspace.doc.onChange('', path => this.#onDocChange(path));
+        this.#stop = [
+            workspace.doc.onChange('', path => this.#onDocChange(path)),
+            workspace.onRole(role => {
+                this.#elements.forEach(entry => entry.element?.onRole?.(role));
+                this.#queuePaint();                                         //move/close controls appear or disappear
+            }),
+            workspace.doc.presence.onPeers(() => this.#paintBadges()),
+        ];
         this.#queuePaint();
     }
 
@@ -41,6 +48,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
     select(id) {
         if (this.#selected === id) return;
         this.#selected = id;
+        this.#workspace?.doc.presence.setLocal({ focus: id });
         this.rootNode.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('selected', tab.dataset.id === id));
         this.dispatchEvent(new CustomEvent('instance-selected', { detail: { id }, bubbles: true, composed: true }));
     }
@@ -64,6 +72,21 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         queueMicrotask(() => { this.#queued = false; this.#paint(); });
     }
 
+    // ---- presence on the tabs: who is looking at what (5.3) ----
+
+    #paintBadges() {
+        if (!this.loaded || !this.#workspace) return;
+        const peers = this.#workspace.doc.presence.peers();
+        for (const tab of this.rootNode.querySelectorAll('.tab')) {
+            tab.querySelectorAll('.peer-dot').forEach(dot => dot.remove());
+            const here = peers.filter(peer => peer.focus === tab.dataset.id);
+            tab.prepend(...here.map(peer => h('span', {
+                class: 'peer-dot', style: `background:${peer.user.color ?? '#667'}`,
+                title: `${peer.user.name}${peer.activity?.instance === tab.dataset.id ? ' está editando' : ' está aqui'}`,
+            }, peer.activity?.instance === tab.dataset.id ? '✎' : '')));
+        }
+    }
+
     // ---- painting ----
 
     #paint() {
@@ -81,6 +104,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         root.replaceChildren(tree ? this.#buildNode(tree) : this.#emptyState());
         this.#acceptComponentDrop(root, null);
 
+        this.#paintBadges();
         if (this.#refocus) { root.querySelector(`[data-split="${this.#refocus}"]`)?.focus(); this.#refocus = null; }
     }
 
@@ -229,6 +253,10 @@ export class AgoraWorkspaceView extends ReactiveComponent {
                         try { workspace.bus.publish(record.id, port, value); } catch (error) { console.error(`[${manifest.name}]`, error.message); }
                     },
                     ports: workspace.bus.portsFor(record.id),
+                    presence: {
+                        //"I am editing here" (typing); cleared by passing null
+                        setActivity: kind => workspace.doc.presence.setLocal({ activity: kind ? { instance: record.id, kind } : null }),
+                    },
                     shared: manifest.capabilities?.includes('shared-content') ? workspace.sharedText(record.id) : undefined,
                 },
             });
@@ -239,6 +267,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         if (this.#elements.get(record.id) !== entry) { element.dispose?.(); return; }       //removed while loading
         entry.element = element;
         entry.body.replaceChildren(element);
+        element.onRole?.(workspace.role);
         if (element.deliverInput) workspace.bus.attach(record.id, element);
     }
 

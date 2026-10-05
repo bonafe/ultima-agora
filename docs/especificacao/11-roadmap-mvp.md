@@ -130,3 +130,18 @@ Cada critério é testável.
 - **Conexões na UI:** apenas pelo seletor "Receber de…" do inspetor (R-CONN-5, forma do MVP). Linhas desenhadas ficam para a F2.
 - **Sugestão:** `suggests` da ação > sem conversão antes de com conversão > título. Falta ainda o uso recente (4.7).
 - **Fora do M2:** arrastar um valor tipado entre componentes (R-DND-1), painel de depuração do barramento (R-OBS-1), eventos operacionais (R-OBS-3, vêm com o hospedeiro IA), `visibleIf`.
+
+### M3 (2026-10-05) — desvios e decisões tomadas na implementação
+
+- **D-05 fechada:** serviço próprio `server/agora-sync` (Node), com `package.json` só no servidor; o app do navegador continua sem npm. Os testes do servidor rodam o `SyncProvider` **do navegador** contra o servidor real.
+- **D-06 aplicada:** bundle ESM do Yjs gerado uma vez (`tools/vendor-yjs`), com versões e sha256 em `vendor/yjs/README.md`.
+- **Mapeamento do documento:** objetos viram `Y.Map` aninhados (mescla por campo, R-CONF-1); listas e primitivos são valores inteiros; o layout continua sendo um valor por painel (D-23 em revisão). Texto das notas é `Y.Text`, editado por diferença mínima, e criado **na criação da instância** para duas pessoas nunca o criarem ao mesmo tempo.
+- **Desfazer por usuário (R-HIST-1)** com `Y.UndoManager` rastreando só as mudanças locais; cada `transact` é um passo. O `onHistory` é emitido de forma assíncrona e agrupada.
+- **Papéis aplicados duas vezes (R-PERM-3):** no servidor (autoridade; escrita proibida fecha a conexão, 4403) e no `YjsWorkspaceDoc` (o cliente falha com exceção clara, em vez de ser desconectado).
+- **Participante:** só escreve em `content` (notas). O servidor confere copiando o documento por escrita (custo conhecido, ver README do servidor).
+- **Mudança de papel em sessão (R-PERM-4)** funciona sem recarregar (`POST /dev/role`).
+- **Token:** HS256 curto na query string do WebSocket; o `DevHost` o pede a `/dev/token` (apenas com `AGORA_DEV_AUTH=1`). A integração com o Django (emissão real) é do M4.
+- **Presença (R-PRES-3):** só foco na aba e "editando"; **não** publica o rótulo da seleção (decisão conservadora, fica para quando houver política por componente).
+- **Recuperação:** escritas locais que o servidor recusa (papel rebaixado com edições offline) voltariam a cada conexão; há um aviso com "Descartar alterações locais".
+- **Lacunas do M3:** link de convite com papel/expiração, chat (M5), autoria por operação (D-18), cursores de colegas dentro do texto, `Optional`: cache de dados classificados no cliente (D-16) ainda não se aplica (só há conteúdo autoral).
+- **Bugs que só apareceram com servidor real:** viewer desconectado por um update vazio do handshake; escrita de `schemaVersion`/título por quem ainda não sincronizou; `close()` do servidor preso.

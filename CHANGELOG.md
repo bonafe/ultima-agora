@@ -2,6 +2,23 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (M3 — collaboration)
+
+### Added
+- `vendor/yjs` (Yjs 13.6.27, y-protocols, lib0) as a prebuilt ESM bundle with recorded hash; `tools/vendor-yjs` regenerates it (the app itself stays build-free).
+- `YjsWorkspaceDoc`: the document API on Yjs — nested maps merge field by field, shared text is a `Y.Text` edited by minimal diffs, undo is per user, roles are enforced locally the way the server enforces them. `MemoryWorkspaceDoc` gained the same `text()`.
+- `SyncProvider` (Yjs sync + awareness over any transport; reconnect with backoff, offline edits merge) and `YjsStateStore` (IndexedDB, optional sync, imports M1/M2 data).
+- Presence (`LocalPresence`, `YjsPresence`): participants in the toolbar, who is looking at which tab, "is editing" marker.
+- Roles in `Workspace` (owner/editor/participant/viewer), live role changes, read-only UI; notes follow the role and keep the caret during remote edits.
+- `server/agora-sync`: Node sync server with HS256 tokens, role enforcement, persistence, limits; 11 integration tests; Dockerfile; CI job.
+- `DevHost` on top of the Yjs store with optional sync (`?sync=…&name=…&role=…`); opening a shared link adopts the workspace.
+- Banner offering to discard local changes the server refused.
+
+### Fixed
+- A viewer was disconnected on connect: the server treated the empty handshake update as a write.
+- Opening an empty (unsynced) workspace wrote `schemaVersion`/title and overwrote the real ones, or got viewers refused.
+- `server.close()` hung when called twice or when the data directory had vanished.
+
 ## Unreleased (M2 — typed bus, connections, actions)
 
 ### Added

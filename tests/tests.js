@@ -8,6 +8,10 @@ import { Layout } from '../core/workspace/layout.js';
 import { Workspace } from '../core/workspace/workspace.js';
 import { DevHost } from '../adapters/dev/dev_host.js';
 import { uuid } from '../core/ids.js';
+import { TypeRegistry, registerCoreTypes } from '../core/connections/types.js';
+import { BusError } from '../core/connections/bus.js';
+import { layoutGraph } from '../components/graph/ultima-graph.js';
+import { parseCsv } from '../components/table/ultima-table.js';
 import { MemoryBackend } from '../collaboration/providers/indexeddb_persistence.js';
 import { renderMarkdown } from '../components/markdown/markdown.js';
 import { registerCoreComponents } from '../components/catalog.js';
@@ -84,6 +88,11 @@ test('config values are checked against the manifest schema', () => {
 
 const loader = () => async () => ({ default: class extends AgoraComponent { constructor() { super({ templateUrl: 'fixtures/basic.html', shadowDom: false }, import.meta.url); } } });
 
+test('registry rejects ports whose type is not registered', () => {
+    const registry = new ComponentRegistry();
+    throws(() => registry.register({ manifest: baseManifest({ inputs: { x: { type: 'Mystery' } } }), load: loader() }), 'unknown type "Mystery"');
+});
+
 test('registry rejects an invalid manifest with the field in the message', () => {
     const registry = new ComponentRegistry();
     throws(() => registry.register({ manifest: baseManifest({ version: 'x' }), load: loader() }), 'version');
@@ -110,9 +119,12 @@ test('registry lists by category and search without loading component code', () 
 
 test('registry finds components by port type', () => {
     const registry = new ComponentRegistry();
+    registry.types.register({ name: 'Entity', kind: 'object' });
+    registry.types.register({ name: 'Person', extends: 'Entity' });
     registry.register({ manifest: baseManifest({ name: 'test-in', tag: 'test-in', inputs: { e: { type: 'Entity' } } }), load: loader() });
     registry.register({ manifest: baseManifest({ name: 'test-out', tag: 'test-out', outputs: { e: { type: 'Entity' } } }), load: loader() });
     assert(registry.typesAccepting('Entity')[0].name === 'test-in');
+    assert(registry.typesAccepting('Person')[0].name === 'test-in', 'a subtype is accepted where its parent is');
     assert(registry.typesProducing('Entity')[0].name === 'test-out');
 });
 
@@ -128,6 +140,7 @@ test('registry load() defines the custom element once', async () => {
 let counter = 0;
 const create = async (manifestOverrides, { config, services, attach = true } = {}) => {
     const registry = new ComponentRegistry();
+    registry.types.register({ name: 'Entity', kind: 'object' });
     const tag = `t-agora-${++counter}`;
     const manifest = baseManifest({ name: tag, tag, ...manifestOverrides });
     registry.register({ manifest, load: loader() });
@@ -627,7 +640,7 @@ test('palette: lists registered components, filters by search and announces addi
     palette.registry = registry;
     await wait(50);
     const items = () => [...palette.rootNode.querySelectorAll('button.item')];
-    assert(items().length === 2);
+    assert(items().length === 4);
     const search = palette.rootNode.querySelector('#search');
     search.value = 'markdown'; search.dispatchEvent(new Event('input'));
     assert(items().length === 1 && items()[0].textContent.startsWith('Notas'));
@@ -637,6 +650,312 @@ test('palette: lists registered components, filters by search and announces addi
     assert(added === 'ultima-notes');
     palette.canAdd = false;
     assert(items().every(b => b.disabled));
+});
+
+// --- port types ---
+
+const coreTypes = () => { const types = new TypeRegistry(); registerCoreTypes(types); return types; };
+
+test('types: subtyping, arrays and Json', () => {
+    const types = coreTypes();
+    types.register({ name: 'Entity', kind: 'object' });
+    types.register({ name: 'Person', extends: 'Entity' });
+    assert(types.isSubtype('Person', 'Entity') && !types.isSubtype('Entity', 'Person'));
+    assert(types.isSubtype('Person[]', 'Entity[]') && !types.isSubtype('Person', 'Entity[]'));
+    assert(types.isSubtype('Table', 'Json') && types.isSubtype('Text', 'String'));
+    assert(!types.isSubtype('Number', 'String'));
+});
+
+test('types: compatibility explains refusals and finds converters, also inside lists', () => {
+    const types = coreTypes();
+    assert(types.compatibility('Node', 'String').ok && types.compatibility('Node', 'String').via === 'rótulo do nó');
+    assert(types.compatibility('Node', 'String').convert({ id: 'a', label: 'A' }) === 'A');
+    const list = types.compatibility('Node[]', 'String[]');
+    assert(list.ok && list.convert([{ id: 'a' }, { id: 'b', label: 'B' }]).join() === 'a,B');
+    const no = types.compatibility('Graph', 'String');
+    assert(!no.ok && no.reason.includes('Graph'));
+    assert(types.compatibility('String', 'Text').ok === false, 'a supertype must not flow into a subtype');
+});
+
+test('types: validate checks kind, required fields and list elements', () => {
+    const types = coreTypes();
+    assert(types.validate('String', 'x') === null && types.validate('String', 3) !== null);
+    assert(types.validate('Node', { id: 'a' }) === null);
+    assert(types.validate('Node', { label: 'x' }).includes('id'));
+    assert(types.validate('Node', { id: 5 }).includes('string'));
+    assert(types.validate('Node[]', [{ id: 'a' }, { id: 'b' }]) === null && types.validate('Node[]', [{ id: 'a' }, {}]) !== null);
+    assert(types.validate('Table', { columns: [], rows: [] }) === null && types.validate('Table', { columns: [] }) !== null);
+    assert(types.validate('Mystery', 1).includes('desconhecido'));
+});
+
+test('types: registering a duplicate or an orphan subtype fails', () => {
+    const types = coreTypes();
+    throws(() => types.register({ name: 'String' }), 'already registered');
+    throws(() => types.register({ name: 'Orphan', extends: 'Nope' }), 'unknown type');
+    throws(() => types.register({ name: 'lowercase' }), 'PascalCase');
+});
+
+// --- bus ---
+
+const busManifests = [
+    { name: 'test-source', outputs: { text: { type: 'String' }, node: { type: 'Node' }, graph: { type: 'Graph' }, ping: { type: 'String', retained: false } } },
+    { name: 'test-sink', inputs: { text: { type: 'String' }, many: { type: 'String', multiple: true }, graph: { type: 'Graph' } } },
+    { name: 'test-middle', inputs: { in: { type: 'String' } }, outputs: { out: { type: 'String' } } },
+].map(m => ({ ...m, tag: m.name, title: m.name, version: '1.0.0', module: './x.js' }));
+
+const busWorkspace = async () => {
+    const registry = new ComponentRegistry();
+    busManifests.forEach(manifest => registry.register({ manifest, load: loader() }));
+    const workspace = new Workspace({ doc: await openDoc(), registry, user: { id: 'u' } });
+    const live = (type) => {
+        const id = workspace.addInstance(type);
+        const received = [];
+        workspace.bus.attach(id, { deliverInput: (port, value) => received.push([port, value]) });
+        return { id, received };
+    };
+    return { workspace, bus: workspace.bus, live };
+};
+const flush = () => wait(20);
+
+test('bus: connects compatible ports and refuses incompatible ones with a reason', async () => {
+    const { bus, live } = await busWorkspace();
+    const a = live('test-source'), b = live('test-sink');
+    assert(bus.connect({ instance: a.id, port: 'text' }, { instance: b.id, port: 'text' }));
+    try { bus.connect({ instance: a.id, port: 'graph' }, { instance: b.id, port: 'text' }); throw new Error('accepted'); }
+    catch (error) { assert(error instanceof BusError && error.message.includes('Graph') && error.message.includes('String'), error.message); }
+    throws(() => bus.connect({ instance: a.id, port: 'nope' }, { instance: b.id, port: 'text' }), 'não tem a saída');
+});
+
+test('bus: self connections and cycles are refused', async () => {
+    const { bus, live } = await busWorkspace();
+    const a = live('test-middle'), b = live('test-middle');
+    throws(() => bus.connect({ instance: a.id, port: 'out' }, { instance: a.id, port: 'in' }), 'ciclo');
+    bus.connect({ instance: a.id, port: 'out' }, { instance: b.id, port: 'in' });
+    throws(() => bus.connect({ instance: b.id, port: 'out' }, { instance: a.id, port: 'in' }), 'ciclo');
+});
+
+test('bus: a published value reaches the connected input; a late attach gets the retained value', async () => {
+    const { workspace, bus, live } = await busWorkspace();
+    const source = live('test-source');
+    const sink = live('test-sink');
+    bus.connect({ instance: source.id, port: 'text' }, { instance: sink.id, port: 'text' });
+    bus.publish(source.id, 'text', 'olá');
+    await flush();
+    assert(JSON.stringify(sink.received) === '[["text","olá"]]', JSON.stringify(sink.received));
+
+    const late = workspace.addInstance('test-sink');
+    bus.connect({ instance: source.id, port: 'text' }, { instance: late, port: 'text' });
+    const lateReceived = [];
+    bus.attach(late, { deliverInput: (port, value) => lateReceived.push([port, value]) });
+    await flush();
+    assert(JSON.stringify(lateReceived) === '[["text","olá"]]', 'the retained value must reach a component mounted later');
+});
+
+test('bus: equal values are not delivered twice; a changed value is', async () => {
+    const { bus, live } = await busWorkspace();
+    const source = live('test-source'), sink = live('test-sink');
+    bus.connect({ instance: source.id, port: 'text' }, { instance: sink.id, port: 'text' });
+    bus.publish(source.id, 'text', 'a'); await flush();
+    bus.publish(source.id, 'text', 'a'); await flush();
+    bus.publish(source.id, 'text', 'b'); await flush();
+    assert(sink.received.map(r => r[1]).join() === 'a,b', JSON.stringify(sink.received));
+});
+
+test('bus: disconnecting clears the input; conversion is applied on the way', async () => {
+    const { bus, live } = await busWorkspace();
+    const source = live('test-source'), sink = live('test-sink');
+    const id = bus.connect({ instance: source.id, port: 'node' }, { instance: sink.id, port: 'text' });
+    bus.publish(source.id, 'node', { id: 'n1', label: 'Pessoa A' }); await flush();
+    assert(sink.received.at(-1)[1] === 'Pessoa A', 'Node should arrive as its label');
+    bus.disconnect(id); await flush();
+    assert(sink.received.at(-1)[1] === undefined && bus.inputValue(sink.id, 'text') === undefined);
+});
+
+test('bus: single inputs need replace for a second source, multiple inputs collect all', async () => {
+    const { bus, live } = await busWorkspace();
+    const a = live('test-source'), b = live('test-source'), sink = live('test-sink');
+    bus.connect({ instance: a.id, port: 'text' }, { instance: sink.id, port: 'text' });
+    throws(() => bus.connect({ instance: b.id, port: 'text' }, { instance: sink.id, port: 'text' }), 'já está conectada');
+    bus.connect({ instance: b.id, port: 'text' }, { instance: sink.id, port: 'text' }, { replace: true });
+    assert(bus.list().filter(c => c.to.port === 'text').length === 1);
+
+    bus.connect({ instance: a.id, port: 'text' }, { instance: sink.id, port: 'many' });
+    bus.connect({ instance: b.id, port: 'text' }, { instance: sink.id, port: 'many' });
+    bus.publish(a.id, 'text', 'x'); bus.publish(b.id, 'text', 'y'); await flush();
+    assert(JSON.stringify(sink.received.filter(r => r[0] === 'many').at(-1)[1]) === '["x","y"]', JSON.stringify(sink.received));
+});
+
+test('bus: invalid values and unknown ports are rejected at publish', async () => {
+    const { bus, live } = await busWorkspace();
+    const source = live('test-source');
+    throws(() => bus.publish(source.id, 'text', 42), 'inválido');
+    throws(() => bus.publish(source.id, 'node', { label: 'no id' }), 'id');
+    throws(() => bus.publish(source.id, 'ghost', 1), 'não tem a saída');
+});
+
+test('bus: non-retained outputs are delivered once and not replayed to late listeners', async () => {
+    const { workspace, bus, live } = await busWorkspace();
+    const source = live('test-source');
+    const first = workspace.addInstance('test-sink');
+    const firstReceived = [];
+    bus.attach(first, { deliverInput: (port, value) => firstReceived.push([port, value]) });
+    bus.connect({ instance: source.id, port: 'ping' }, { instance: first, port: 'text' });
+    bus.publish(source.id, 'ping', 'now'); await flush();
+    assert(firstReceived.at(-1)[1] === 'now');
+    const second = workspace.addInstance('test-sink');
+    const secondReceived = [];
+    bus.attach(second, { deliverInput: (port, value) => secondReceived.push([port, value]) });
+    bus.connect({ instance: source.id, port: 'ping' }, { instance: second, port: 'text' }); await flush();
+    assert(secondReceived.length === 0, JSON.stringify(secondReceived));
+});
+
+test('bus: removing an instance removes its connections, and undo brings both back', async () => {
+    const { workspace, bus, live } = await busWorkspace();
+    const a = live('test-source'), b = live('test-sink');
+    bus.connect({ instance: a.id, port: 'text' }, { instance: b.id, port: 'text' });
+    workspace.removeInstance(b.id);
+    assert(bus.list().length === 0);
+    workspace.doc.undo();
+    assert(bus.list().length === 1 && workspace.instance(b.id));
+});
+
+test('bus: compatibleSources lists the outputs that fit, noting conversions', async () => {
+    const { bus, live } = await busWorkspace();
+    const source = live('test-source'), sink = live('test-sink');
+    const options = bus.compatibleSources(sink.id, 'text').map(o => `${o.port}${o.via ? '*' : ''}`).sort().join();
+    assert(options === 'node*,ping,text', options);
+    assert(bus.compatibleSources(sink.id, 'graph').map(o => o.port).join() === 'graph');
+});
+
+// --- manifest rules for actions ---
+
+test('manifest: create/emit actions must name an output port of the same type', () => {
+    const base = { name: 'test-a', tag: 'test-a', title: 'A', version: '1.0.0', module: './a.js', outputs: { g: { type: 'Graph' } } };
+    assert(validateManifest({ ...base, actions: { go: { title: 'Go', effect: 'create', produces: 'Graph', port: 'g' } } }).length === 0);
+    assert(validateManifest({ ...base, actions: { go: { title: 'Go', effect: 'create', produces: 'Graph' } } }).some(e => e.startsWith('actions.go.port')));
+    assert(validateManifest({ ...base, actions: { go: { title: 'Go', effect: 'create', produces: 'Graph', port: 'nope' } } }).some(e => e.includes('not an output port')));
+    assert(validateManifest({ ...base, actions: { go: { title: 'Go', effect: 'create', produces: 'Table', port: 'g' } } }).some(e => e.includes('must equal')));
+});
+
+// --- generic components ---
+
+test('csv: header, quotes and ragged rows', () => {
+    const table = parseCsv('a,b\n"x, y",2\n3');
+    assert(table.columns.map(c => c.key).join() === 'a,b' && table.rows[0].a === 'x, y' && table.rows[1].a === '3');
+    assert(parseCsv('').rows.length === 0);
+});
+
+test('graph layout is deterministic and keeps nodes inside the canvas', () => {
+    const graph = { nodes: ['a', 'b', 'c', 'd'].map(id => ({ id })), edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }] };
+    const one = layoutGraph(graph, 'force'), two = layoutGraph(graph, 'force');
+    for (const [id, p] of one) {
+        assert(p.x === two.get(id).x && p.y === two.get(id).y, 'not deterministic');
+        assert(p.x >= 0 && p.x <= 800 && p.y >= 0 && p.y <= 520, `${id} outside`);
+    }
+});
+
+// --- the M2 flow, end to end in the real components ---
+
+const nodesOf = view => [...view.rootNode.querySelectorAll('ultima-graph')].flatMap(g => [...g.rootNode.querySelectorAll('.node')]);
+
+test('M2 flow: table → action "mostrar como grafo" → linked graph → node selection → text', async () => {
+    const { view, workspace } = await mountView();
+    const table = workspace.addInstance('ultima-table');
+    await wait(400);
+
+    const { suggestions, port, created } = await workspace.invokeAction(table, 'showGraph');
+    assert(created === null && port === 'graph');
+    assert(suggestions[0].component === 'ultima-graph' && suggestions[0].port === 'graph', 'the action names ultima-graph first');
+
+    const graphId = workspace.createLinked(table, port, suggestions[0]);
+    await wait(500);
+    assert(workspace.bus.list().length === 1 && workspace.bus.list()[0].to.instance === graphId);
+    assert(nodesOf(view).length === 4, `graph should show 4 nodes, shows ${nodesOf(view).length}`);
+    const canvas = view.rootNode.querySelector('ultima-graph').rootNode.querySelector('#svg');
+    assert(canvas.getBoundingClientRect().width > 0 && !canvas.hasAttribute('hidden'), 'the graph must be visible, not only present in the DOM');
+
+    const text = workspace.addInstance('ultima-text', { target: { panelId: workspace.layout.findPanelOf(graphId), side: 'bottom' } });
+    await wait(300);
+    workspace.bus.connect({ instance: graphId, port: 'selectedNode' }, { instance: text, port: 'text' });
+    nodesOf(view)[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await wait(100);
+    const shown = view.rootNode.querySelector(`[data-instance-id="${text}"]`).rootNode.querySelector('p').textContent;
+    assert(shown === 'Pessoa A' || shown === 'Pessoa B' || shown === 'Empresa Alfa' || shown === 'Empresa Beta', `text shows "${shown}"`);
+    assert(shown === workspace.bus.outputValue(graphId, 'selectedNode').label, 'the text must show the label of the selected node');
+});
+
+test('M2 flow: a reopened workspace has its connections AND their values again', async () => {
+    const first = await mountView();
+    const table = first.workspace.addInstance('ultima-table');
+    await wait(400);
+    const { suggestions, port } = await first.workspace.invokeAction(table, 'showGraph');
+    first.workspace.createLinked(table, port, suggestions[0]);
+    await wait(500);
+
+    //Same document, brand-new view and bus: what a page reload amounts to
+    const view = document.createElement('agora-workspace');
+    view.style.cssText = 'display:block;width:600px;height:300px';
+    document.body.append(view);
+    assert(await settleOrTimeout(view.whenLoaded()));
+    const reopened = new Workspace({ doc: first.workspace.doc, registry: first.registry, user: { id: 'u' } });
+    view.workspace = reopened;
+    await wait(700);
+    assert(reopened.bus.list().length === 1);
+    assert(nodesOf(view).length === 4, `after reopening the graph shows ${nodesOf(view).length} nodes`);
+});
+
+test('M2 flow: creating the linked component is one undo step', async () => {
+    const { view, workspace } = await mountView();
+    const table = workspace.addInstance('ultima-table');
+    await wait(400);
+    const { suggestions, port } = await workspace.invokeAction(table, 'showGraph');
+    workspace.createLinked(table, port, suggestions[0]);
+    assert(workspace.instances().length === 2 && workspace.bus.list().length === 1);
+    workspace.doc.undo();
+    await wait(100);
+    assert(workspace.instances().length === 1 && workspace.bus.list().length === 0);
+});
+
+test('M2 flow: incompatible connections are refused in the real components', async () => {
+    const { workspace } = await mountView();
+    const table = workspace.addInstance('ultima-table');
+    const text = workspace.addInstance('ultima-text');
+    await wait(300);
+    throws(() => workspace.bus.connect({ instance: table, port: 'graph' }, { instance: text, port: 'text' }), 'Graph');
+    assert(workspace.bus.connect({ instance: table, port: 'selectedRow' }, { instance: text, port: 'text' }), 'Row → String is converted');
+});
+
+test('M2 flow: an action fails with a readable message when the table lacks the columns', async () => {
+    const { workspace } = await mountView();
+    const table = workspace.addInstance('ultima-table', { config: { data: 'x,y\n1,2' } });
+    await wait(400);
+    try { await workspace.invokeAction(table, 'showGraph'); throw new Error('accepted'); }
+    catch (error) { assert(error.message.includes('coluna'), error.message); }
+});
+
+test('M2 flow: the inspector offers connections and actions, and connects through the selector', async () => {
+    const { view, workspace } = await mountView();
+    const source = workspace.addInstance('ultima-table');
+    await wait(300);
+    const text = workspace.addInstance('ultima-text');
+    await wait(300);
+    const inspector = document.createElement('agora-inspector');
+    document.body.append(inspector);
+    assert(await settleOrTimeout(inspector.whenLoaded()));
+    inspector.workspace = workspace;
+    inspector.selectedId = text;
+    await wait(80);
+    const select = inspector.rootNode.querySelector('select[aria-label="Receber em text"]');
+    assert(select, 'no connection selector');
+    const options = [...select.options].map(o => o.textContent);
+    assert(options.some(o => o.includes('selectedRow') && o.includes('converte')), options.join(' | '));
+    select.value = [...select.options].find(o => o.value.endsWith('|selectedRow')).value;
+    select.dispatchEvent(new Event('change'));
+    assert(workspace.bus.list().length === 1 && workspace.bus.list()[0].from.port === 'selectedRow');
+
+    inspector.selectedId = source;
+    await wait(80);
+    assert([...inspector.rootNode.querySelectorAll('button.action')].some(b => b.textContent === 'Mostrar como grafo'));
 });
 
 // --- runner ---

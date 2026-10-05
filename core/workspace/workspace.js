@@ -7,6 +7,7 @@
 //  doc.content.<id>             collaborative content of one instance (R-DOC-2)
 import { Layout } from './layout.js';
 import { validateConfig } from '../registry/manifest.js';
+import { Bus } from '../connections/bus.js';
 
 export const SCHEMA_VERSION = 1;
 import { uuid } from '../ids.js';
@@ -17,17 +18,20 @@ export class Workspace {
     #registry;
     #user;
     #layout;
+    #bus;
 
     constructor({ doc, registry, user }) {
         this.#doc = doc;
         this.#registry = registry;
         this.#user = user;
         this.#layout = new Layout(doc);
+        this.#bus = new Bus(this);
         if (doc.get('meta.schemaVersion') === undefined) doc.set('meta.schemaVersion', SCHEMA_VERSION);
     }
 
     get doc() { return this.#doc; }
     get layout() { return this.#layout; }
+    get bus() { return this.#bus; }
     get registry() { return this.#registry; }
     get user() { return this.#user; }
     //R-DOC-1: a document from a newer schema than we know is opened read-only.
@@ -69,6 +73,7 @@ export class Workspace {
     removeInstance(id) {
         this.#assertWritable();
         this.#doc.transact(`remove ${id}`, () => {
+            this.#bus.removeConnectionsOf(id);                  //R-INST-4
             this.#layout.remove(id);
             this.#doc.delete(['instances', id]);
         });
@@ -94,6 +99,58 @@ export class Workspace {
     setLabel(id, label) {
         this.#assertWritable();
         this.#doc.transact(`rename ${id}`, () => this.#doc.set(['instances', id, 'label'], label));
+    }
+
+    // ---- actions and suggestions (docs 04, 4.6 and 4.7) ----
+
+    //Components that can display a value of `type` on one of their inputs, best first: the ones the action
+    //names, then those needing no conversion, then by title.
+    suggestVisualizations(type, prefer = []) {
+        const types = this.#registry.types;
+        return this.#registry.list().flatMap(manifest => {
+            for (const [port, spec] of Object.entries(manifest.inputs ?? {})) {
+                const compatibility = types.compatibility(type, spec.type);
+                if (compatibility.ok) return [{ component: manifest.name, title: manifest.title, port, via: compatibility.via }];
+            }
+            return [];
+        }).sort((a, b) => {
+            const rank = c => { const i = prefer.indexOf(c.component); return i === -1 ? prefer.length : i; };
+            return rank(a) - rank(b) || (a.via ? 1 : 0) - (b.via ? 1 : 0) || a.title.localeCompare(b.title);
+        });
+    }
+
+    //Creates a component showing what `sourceId` emits on `sourcePort`, next to it and connected, in ONE
+    //undoable operation (R-ACT-2, R-SUG-2).
+    createLinked(sourceId, sourcePort, candidate) {
+        this.#assertWritable();
+        let created = null;
+        this.#doc.transact(`link ${candidate.component}`, () => {
+            const panelId = this.#layout.findPanelOf(sourceId);
+            created = this.addInstance(candidate.component, { createdVia: 'action', target: panelId ? { panelId, side: 'right' } : {} });
+            this.#bus.connect({ instance: sourceId, port: sourcePort }, { instance: created, port: candidate.port }, { createdVia: 'action' });
+        });
+        return created;
+    }
+
+    //Runs an action of a live instance. Actions with effect "emit"/"create" publish their result on the
+    //declared output port; "create" also offers (or, with autoCreate, makes) a visualization of it.
+    async invokeAction(instanceId, name, args) {
+        const element = this.#bus.element(instanceId);
+        if (!element) throw new Error('O componente precisa estar aberto (visível) para executar ações');
+        const manifest = this.#registry.getManifest(this.instance(instanceId).type);
+        const spec = manifest.actions?.[name];
+        if (!spec) throw new Error(`Ação desconhecida: ${name}`);
+
+        const result = await element.invokeAction(name, args);
+        if (spec.effect === 'emit' || spec.effect === 'create') this.#bus.publish(instanceId, spec.port, result);
+
+        let suggestions = [];
+        let created = null;
+        if (spec.effect === 'create') {
+            suggestions = this.suggestVisualizations(spec.produces, spec.suggests ?? []);
+            if (spec.autoCreate && suggestions.length) created = this.createLinked(instanceId, spec.port, suggestions[0]);
+        }
+        return { result, port: spec.port, suggestions, created };
     }
 
     get title() { return this.#doc.get('meta.title') ?? ''; }

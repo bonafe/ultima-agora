@@ -29,6 +29,8 @@ export class AgoraWorkspaceView extends ReactiveComponent {
     get workspace() { return this.#workspace; }
     set workspace(workspace) {
         this.#stop?.();
+        this.#elements.forEach((entry, id) => { entry.element?.dispose?.(); this.#workspace?.bus.detach(id); });
+        this.#elements.clear();
         this.#workspace = workspace;
         this.#stop = workspace.doc.onChange('', path => this.#onDocChange(path));
         this.#queuePaint();
@@ -71,7 +73,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
 
         const live = new Set(workspace.instances().map(i => i.id));
         for (const [id, entry] of this.#elements) {
-            if (!live.has(id)) { entry.element?.dispose?.(); this.#elements.delete(id); }
+            if (!live.has(id)) { entry.element?.dispose?.(); this.#workspace.bus.detach(id); this.#elements.delete(id); }
         }
         if (this.#selected && !live.has(this.#selected)) { this.#selected = null; this.dispatchEvent(new CustomEvent('instance-selected', { detail: { id: null }, bubbles: true, composed: true })); }
 
@@ -223,7 +225,10 @@ export class AgoraWorkspaceView extends ReactiveComponent {
                 instanceId: record.id, manifest, config: record.config,
                 services: {
                     setConfig: patch => workspace.setConfig(record.id, patch),
-                    emit: () => {}, ports: {},          //the bus arrives in M2
+                    emit: (port, value) => {
+                        try { workspace.bus.publish(record.id, port, value); } catch (error) { console.error(`[${manifest.name}]`, error.message); }
+                    },
+                    ports: workspace.bus.portsFor(record.id),
                     shared: manifest.capabilities?.includes('shared-content') ? workspace.sharedText(record.id) : undefined,
                 },
             });
@@ -234,6 +239,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         if (this.#elements.get(record.id) !== entry) { element.dispose?.(); return; }       //removed while loading
         entry.element = element;
         entry.body.replaceChildren(element);
+        if (element.deliverInput) workspace.bus.attach(record.id, element);
     }
 
     // ---- drag and drop ----

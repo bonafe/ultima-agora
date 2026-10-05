@@ -111,3 +111,6 @@ export const AgoraInstance = (Base) => class extends Base {
 };
 
 export const AgoraComponent = mix(ReactiveComponent).with(AgoraInstance);
+
+//Frozen at the end of M2 (D-04). See docs/contrato-agoracomponent.md before changing anything the contract lists.
+AgoraComponent.CONTRACT_VERSION = 1;

@@ -119,3 +119,14 @@ Cada critério é testável.
 - **Rota:** `#/workspace/<id>` no hospedeiro de desenvolvimento (R-WS-2 prevê `/agora/workspace/<id>` no hospedeiro real).
 - **Testes:** `tests/run.sh` acompanha o título da página (o `--virtual-time-budget` não espera o IndexedDB).
 - **Fora do M1:** barra de ferramentas própria (`ui/toolbar`) — está dentro do shell; atribuição de papéis; `ultima-markdown` como componente (existe só o renderizador); `visibleIf` no inspetor; seleção compartilhada e presença (M3).
+
+### M2 (2026-10-04) — desvios e decisões tomadas na implementação
+
+- **D-04 fechada:** contrato congelado em `docs/contrato-agoracomponent.md` (versão 1).
+- **Ações que produzem valor** declaram a porta de saída que o carrega (`port`), com o mesmo tipo de `produces`. Foi uma lacuna da especificação: 4.6 não dizia por onde o resultado de `create` viaja até o novo componente.
+- **Saídas são recalculadas pelo componente** ao carregar ou ao mudar a config (R-PORT-4). Descoberto no navegador: sem isso, uma conexão restaurada ficava sem valor.
+- **Ordem de entradas `multiple`:** pelo carimbo `createdAt` da conexão (estritamente crescente), e não pelo id aleatório.
+- **Tipos:** uma conversão por salto; `Json` aceita qualquer coisa; listas convertem elemento a elemento. Sem `Optional<T>` (use `required: false`).
+- **Conexões na UI:** apenas pelo seletor "Receber de…" do inspetor (R-CONN-5, forma do MVP). Linhas desenhadas ficam para a F2.
+- **Sugestão:** `suggests` da ação > sem conversão antes de com conversão > título. Falta ainda o uso recente (4.7).
+- **Fora do M2:** arrastar um valor tipado entre componentes (R-DND-1), painel de depuração do barramento (R-OBS-1), eventos operacionais (R-OBS-3, vêm com o hospedeiro IA), `visibleIf`.

@@ -25,6 +25,7 @@ button:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-
 .menu button:hover { background: var(--agora-bg, #f4f5f7); }
 .tabpanel { flex: 1; min-height: 0; overflow: auto; position: relative; }
 .tabpanel[hidden] { display: none; }
+.tabpanel > * { box-sizing: border-box; min-height: 100%; }
 .notice { padding: 1rem; opacity: .7; }
 .notice.error { color: var(--agora-danger, #c0392b); opacity: 1; }
 .hint { position: absolute; z-index: 10; pointer-events: none; background: color-mix(in srgb, var(--agora-accent, #2a6df4) 28%, transparent); border: 2px solid var(--agora-accent, #2a6df4); }

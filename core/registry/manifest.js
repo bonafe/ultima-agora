@@ -27,7 +27,10 @@ export function validateManifest(manifest) {
         if (manifest[section] === undefined) continue;
         if (!isObject(manifest[section])) { fail(section, 'must be an object'); continue; }
         for (const [port, spec] of Object.entries(manifest[section])) {
-            if (!isObject(spec) || typeof spec.type !== 'string' || !spec.type) fail(`${section}.${port}`, 'needs a "type" string');
+            if (!isObject(spec) || typeof spec.type !== 'string' || !spec.type) { fail(`${section}.${port}`, 'needs a "type" string'); continue; }
+            for (const flag of ['multiple', 'retained', 'required']) {
+                if (spec[flag] !== undefined && typeof spec[flag] !== 'boolean') fail(`${section}.${port}.${flag}`, 'must be a boolean');
+            }
         }
     }
 
@@ -38,6 +41,12 @@ export function validateManifest(manifest) {
             if (typeof spec.title !== 'string') fail(`actions.${name}.title`, 'required string');
             if (spec.effect !== undefined && !ACTION_EFFECTS.includes(spec.effect)) fail(`actions.${name}.effect`, `must be one of ${ACTION_EFFECTS.join(', ')}`);
             if (spec.effect === 'create' && typeof spec.produces !== 'string') fail(`actions.${name}.produces`, 'required when effect is "create"');
+            if (spec.effect === 'create' || spec.effect === 'emit') {
+                if (typeof spec.port !== 'string') fail(`actions.${name}.port`, 'required: the output port that carries the result');
+                else if (!manifest.outputs?.[spec.port]) fail(`actions.${name}.port`, `"${spec.port}" is not an output port`);
+                else if (spec.produces && manifest.outputs[spec.port].type !== spec.produces) fail(`actions.${name}.produces`, `must equal the type of output "${spec.port}"`);
+            }
+            if (spec.suggests !== undefined && !Array.isArray(spec.suggests)) fail(`actions.${name}.suggests`, 'must be an array of component names');
         }
     }
 

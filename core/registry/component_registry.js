@@ -1,13 +1,25 @@
 //Catalog of component definitions. The palette is built from manifests alone; component code is
 //only loaded when an instance is created (R-REG-1).
 import { validateManifest } from './manifest.js';
+import { TypeRegistry, registerCoreTypes } from '../connections/types.js';
 
 export class ComponentRegistry extends EventTarget {
     #definitions = new Map();       //name -> { manifest, load, component }
+    types = new TypeRegistry();     //port types; applications register their own next to the core ones
+
+    constructor() {
+        super();
+        registerCoreTypes(this.types);
+    }
 
     //manifest: object; load: () => Promise<module> whose default export (or `component`) is the class
     register({ manifest, load, replaces = null }) {
         const errors = validateManifest(manifest);
+        for (const section of ['inputs', 'outputs']) {
+            for (const [port, spec] of Object.entries(manifest?.[section] ?? {})) {
+                if (typeof spec?.type === 'string' && !this.types.has(spec.type)) errors.push(`${section}.${port}.type: unknown type "${spec.type}" (register it in registry.types first)`);
+            }
+        }
         if (errors.length) throw new Error(`Invalid manifest${manifest?.name ? ` "${manifest.name}"` : ''}:\n  ${errors.join('\n  ')}`);
         if (typeof load !== 'function') throw new TypeError(`register("${manifest.name}"): "load" must be a function`);
 
@@ -59,12 +71,12 @@ export class ComponentRegistry extends EventTarget {
         return definition.component;
     }
 
-    //Components with an input port that accepts `type` (exact match for now; subtyping and converters come with the bus, M2).
+    //Components with an input port that accepts values of `type` (subtypes and one conversion allowed).
     typesAccepting(type) {
-        return this.list().filter(m => Object.values(m.inputs ?? {}).some(port => port.type === type));
+        return this.list().filter(m => Object.values(m.inputs ?? {}).some(port => this.types.compatibility(type, port.type).ok));
     }
 
     typesProducing(type) {
-        return this.list().filter(m => Object.values(m.outputs ?? {}).some(port => port.type === type));
+        return this.list().filter(m => Object.values(m.outputs ?? {}).some(port => this.types.compatibility(port.type, type).ok));
     }
 }

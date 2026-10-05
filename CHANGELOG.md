@@ -2,6 +2,20 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (M2 — typed bus, connections, actions)
+
+### Added
+- `TypeRegistry` (subtypes, arrays, structural validation, converters) and core types `Table`, `Row`, `Graph`, `Node`, `Text`, `Ref`…; the registry refuses ports whose type is not registered.
+- `Bus`: typed ports, connections in the document (cycles, incompatible types and double-fed inputs refused with a reason), retained values, conversion on the way, ordered `multiple` inputs, no repeated deliveries.
+- Actions with effect `emit`/`create`: results are published, visualizations are suggested, and `createLinked` makes the component, places it beside the source and connects it in one undo step.
+- Components `ultima-table` (CSV, sorting, row selection, "mostrar como grafo") and `ultima-graph` (deterministic layout, keyboard selectable); `ultima-text` gained a `text` input.
+- Inspector sections for connections (compatible sources, noting conversions) and actions.
+- `docs/contrato-agoracomponent.md`: the contract, frozen as version 1 (D-04).
+
+### Fixed
+- SVG `hidden` was set as a property, which SVG elements ignore; the graph was in the DOM but invisible.
+- Output values were lost on reload when only an action had produced them; components now re-emit what they derive.
+
 ## Unreleased (M1 — local workspace)
 
 ### Added

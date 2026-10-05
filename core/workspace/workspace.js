@@ -22,9 +22,14 @@ export class Workspace {
     #user;
     #layout;
     #bus;
+    #domain;
+    #id;
 
-    constructor({ doc, registry, user }) {
+    //domain: the host's client for application data (capability 'domain-data'); id: this workspace's id in the host
+    constructor({ doc, registry, user, domain = null, id = null }) {
         this.#doc = doc;
+        this.#domain = domain;
+        this.#id = id;
         this.#registry = registry;
         this.#user = user;
         this.#layout = new Layout(doc);
@@ -36,6 +41,9 @@ export class Workspace {
     get doc() { return this.#doc; }
     get layout() { return this.#layout; }
     get bus() { return this.#bus; }
+    get id() { return this.#id; }
+    //The client components receive as `this.domain`, already scoped to this workspace when the host supports it
+    get domain() { return this.#domain?.forWorkspace?.(this.#id) ?? this.#domain; }
     get registry() { return this.#registry; }
     get user() { return this.#user; }
     //The user's role comes from the host/server and can change while the workspace is open (R-PERM-4)

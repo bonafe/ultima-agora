@@ -114,7 +114,7 @@ export class AgoraShell extends ReactiveComponent {
 
         this.#meta = await this.#host.get(id);
         const doc = await this.#host.openDocument(this.#meta);
-        const workspace = new Workspace({ doc, registry: this.#registry, user: this.#host.identity });
+        const workspace = new Workspace({ doc, registry: this.#registry, user: this.#host.identity, domain: this.#host.domain ?? null, id });
         this.#workspace = workspace;
 
         //The document is the source of truth for the title; the catalog only mirrors it for the list.

@@ -865,6 +865,27 @@ test('graph layout is deterministic and keeps nodes inside the canvas', () => {
 
 const nodesOf = view => [...view.rootNode.querySelectorAll('ultima-graph')].flatMap(g => [...g.rootNode.querySelectorAll('.node')]);
 
+test('domain-data: a component receives the host client, scoped to its workspace', async () => {
+    const registry = new ComponentRegistry();
+    const manifest = baseManifest({ name: 'test-domain', tag: 'test-domain', capabilities: ['domain-data'] });
+    registry.register({ manifest, load: loader() });
+    const domain = { forWorkspace: id => ({ scopedTo: id }) };
+    const workspace = new Workspace({ doc: await openDoc(), registry, user: { id: 'u' }, domain, id: 'ws-9' });
+    const view = document.createElement('agora-workspace');
+    view.style.cssText = 'display:block;width:400px;height:200px';
+    document.body.append(view);
+    assert(await settleOrTimeout(view.whenLoaded()));
+    view.workspace = workspace;
+    const id = workspace.addInstance('test-domain');
+    await wait(400);
+    const element = view.rootNode.querySelector(`[data-instance-id="${id}"]`);
+    assert(element.domain.scopedTo === 'ws-9', 'the instance must get the workspace-scoped client');
+    const plain = await mountView();
+    const other = plain.workspace.addInstance('ultima-text');
+    await wait(300);
+    throws(() => plain.view.rootNode.querySelector(`[data-instance-id="${other}"]`).domain, 'domain-data');
+});
+
 test('M2 flow: table → action "mostrar como grafo" → linked graph → node selection → text', async () => {
     const { view, workspace } = await mountView();
     const table = workspace.addInstance('ultima-table');

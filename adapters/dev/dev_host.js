@@ -30,6 +30,7 @@ export class DevHost {
     #requestedRole;
     store;
     identity;
+    domain = null;              //no application data in the dev host
     persistent = true;          //false when IndexedDB is unavailable and everything lives in memory
 
     //sync: { url: 'ws://host:8787', http: 'http://host:8787' } | null.  role: what to ask the dev server for.

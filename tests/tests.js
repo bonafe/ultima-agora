@@ -24,6 +24,8 @@ import { registerCoreComponents } from '../components/catalog.js';
 import '../ui/workspace/agora-workspace.js';
 import '../ui/inspector/agora-inspector.js';
 import '../ui/palette/agora-palette.js';
+import '../ui/settings/agora-settings.js';
+import { THEME_KEY } from '../ui/settings/agora-settings.js';
 
 //Zero-dependency test runner (same shape as the UltimaJS one): each test throws (via assert) on failure.
 
@@ -671,6 +673,149 @@ test('inspector: builds fields from the manifest and rejects invalid values', as
     inspector.selectedId = null;
     await wait(50);
     assert(root.querySelector('.empty'));
+});
+
+// ---- settings dialog ----
+
+const fakeHost = (over = {}) => {
+    const calls = { logout: [], level: [], clear: 0 };
+    return { calls, settings: {
+        account: { name: 'Maria', logout: async options => { calls.logout.push(options); if (over.logoutFails) throw new Error('Sem conexão: não é possível sair agora.'); } },
+        device: {
+            cacheLevels: ['nenhum', 'publico', 'interno', 'restrito'], cacheLevel: 'interno',
+            setCacheLevel: async level => { calls.level.push(level); },
+            describe: async () => ({ workspaces: 3, cacheEntries: 12, pending: over.pending ?? 0 }),
+            clear: async () => { calls.clear++; },
+        },
+    } };
+};
+const openSettings = async host => {
+    const settings = document.createElement('agora-settings');
+    document.body.append(settings);
+    assert(await settleOrTimeout(settings.whenLoaded()));
+    await settings.open({ host });
+    await wait(60);
+    return settings;
+};
+const q = (settings, selector) => settings.rootNode.querySelector(selector);
+
+test('settings: shows account, device data and app settings, from what the host offers', async () => {
+    const settings = await openSettings(fakeHost());
+    assert(settings.isOpen);
+    const text = q(settings, '#content').textContent;
+    for (const expected of ['Maria', 'Sair', 'Nível do cache offline', 'Limpar este dispositivo', 'Tema', 'Rede', '12', 'Cópias de dados consultados']) assert(text.includes(expected), `missing "${expected}"`);
+    assert([...q(settings, '#cache-level').options].map(o => o.value).join() === 'nenhum,publico,interno,restrito', 'only the levels the host allows');
+    assert(q(settings, '#cache-level').value === 'interno');
+    settings.close();
+});
+
+test('settings: a host without cache levels or logout (the dev host) simply does not show them', async () => {
+    const settings = await openSettings({ settings: { account: { name: 'Dev' }, device: { describe: async () => ({ workspaces: 1 }), clear: async () => {} } } });
+    assert(!q(settings, '#cache-level') && !q(settings, '#logout'));
+    assert(q(settings, '#clear') && q(settings, '#theme'), 'clearing the device and the theme are always there');
+    settings.close();
+    const bare = await openSettings({});
+    assert(!q(bare, '#clear') && q(bare, '#theme'), 'with no host settings only the app settings remain');
+    bare.close();
+});
+
+test('settings: changing the cache level asks the host, says what happened, and warns that restricted data is not encrypted', async () => {
+    const host = fakeHost();
+    const settings = await openSettings(host);
+    assert(!settings.rootNode.textContent.includes('não é cifrado'), 'no warning at "interno"');
+    const select = q(settings, '#cache-level');
+    select.value = 'nenhum';
+    select.dispatchEvent(new Event('change'));
+    await wait(80);
+    assert(host.calls.level.join() === 'nenhum' && q(settings, '#content').textContent.includes('Nada mais será guardado'));
+    host.settings.device.cacheLevel = 'restrito';
+    q(settings, '#cache-level').value = 'restrito';
+    q(settings, '#cache-level').dispatchEvent(new Event('change'));
+    await wait(80);
+    assert(q(settings, '#content').textContent.includes('não é cifrado'), 'the warning appears from "restrito" up');
+    settings.close();
+});
+
+test('settings: a failing level change is reported, not swallowed', async () => {
+    const host = fakeHost();
+    host.settings.device.setCacheLevel = async () => { throw new Error('Nível acima do permitido por esta instância.'); };
+    const settings = await openSettings(host);
+    q(settings, '#cache-level').value = 'restrito';
+    q(settings, '#cache-level').dispatchEvent(new Event('change'));
+    await wait(80);
+    assert(q(settings, '[role=alert]').textContent.includes('acima do permitido'));
+    settings.close();
+});
+
+test('settings: clearing the device is two steps, needs an explicit acknowledgement, and says what will be lost', async () => {
+    const host = fakeHost({ pending: 2 });
+    const settings = await openSettings(host);
+    let cleared = false;
+    settings.addEventListener('device-cleared', () => { cleared = true; });
+    q(settings, '#clear').click();
+    await wait(30);
+    const confirm = q(settings, '#confirm-clear');
+    assert(confirm && confirm.disabled, 'the destructive button starts disabled');
+    assert(q(settings, '#content').textContent.includes('2 item(ns)') && q(settings, '#content').textContent.includes('perdidos'), 'it names what is still unsent');
+    confirm.click();
+    assert(host.calls.clear === 0, 'a disabled button does nothing');
+    q(settings, '#understood').click();
+    assert(!confirm.disabled);
+    q(settings, '#cancel-clear').click();
+    await wait(30);
+    assert(q(settings, '#clear') && host.calls.clear === 0, 'cancelling goes back and clears nothing');
+    q(settings, '#clear').click(); await wait(30);
+    q(settings, '#understood').click();
+    q(settings, '#confirm-clear').click();
+    await wait(60);
+    assert(host.calls.clear === 1 && cleared, 'cleared exactly once, and the shell is told');
+    settings.close();
+});
+
+test('settings: logout passes the "also clear this device" choice; a failure is shown and the dialog stays', async () => {
+    const host = fakeHost({ logoutFails: true });
+    const settings = await openSettings(host);
+    q(settings, '#logout').click();
+    await wait(60);
+    assert(host.calls.logout[0].clearDevice === false);
+    assert(q(settings, '[role=alert]').textContent.includes('não é possível sair') && settings.isOpen);
+    q(settings, '#logout-clear').click();
+    q(settings, '#logout').click();
+    await wait(60);
+    assert(host.calls.logout[1].clearDevice === true);
+    settings.close();
+});
+
+test('settings: the theme is remembered and announced to the shell', async () => {
+    try { localStorage.removeItem(THEME_KEY); } catch { /* ignore */ }
+    const settings = await openSettings(fakeHost());
+    let heard = null;
+    settings.addEventListener('theme-change', event => { heard = event.detail.theme; });
+    q(settings, '#theme').value = 'dark';
+    q(settings, '#theme').dispatchEvent(new Event('change'));
+    assert(heard === 'dark' && localStorage.getItem(THEME_KEY) === 'dark');
+    localStorage.removeItem(THEME_KEY);
+    settings.close();
+});
+
+test('wiping: the IndexedDB backend and the dev host really delete the local data', async () => {
+    const name = `agora-test-${uuid()}`;
+    const backend = new IndexedDbBackend(name);
+    await backend.putCache('k', { value: 1, level: 'publico' });
+    await backend.putDocument('d', { meta: {} });
+    await backend.destroy();
+    const fresh = new IndexedDbBackend(name);
+    assert(await fresh.getCache('k') === undefined && await fresh.getDocument('d') === undefined && (await fresh.listWorkspaces()).length === 0);
+    await fresh.close();
+
+    const host = new DevHost({ dbName: `agora-test-${uuid()}` });
+    const meta = await host.create('A apagar');
+    const doc = await host.openDocument(meta);
+    doc.set('meta.title', 'x'); await doc.flush();
+    localStorage.setItem('agora.algo', '1');
+    await host.settings.device.clear();
+    assert(localStorage.getItem('agora.algo') === null, 'agora.* local settings are gone');
+    assert((await host.list()).length === 0, 'the catalog is empty after wiping');
 });
 
 test('palette: lists registered components, filters by search and announces additions', async () => {

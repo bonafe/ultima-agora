@@ -1,5 +1,5 @@
 {
- "version": "6cd0668aed5a3bea",
+ "version": "9fe860fcf1f3612f",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -45,6 +45,9 @@
   "ui/palette/agora-palette.css",
   "ui/palette/agora-palette.html",
   "ui/palette/agora-palette.js",
+  "ui/settings/agora-settings.css",
+  "ui/settings/agora-settings.html",
+  "ui/settings/agora-settings.js",
   "ui/shell/agora-shell.css",
   "ui/shell/agora-shell.html",
   "ui/shell/agora-shell.js",

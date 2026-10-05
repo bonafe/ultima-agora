@@ -49,6 +49,21 @@ export class DevHost {
 
     get syncEnabled() { return this.#sync !== null; }
 
+    //What the shell's settings dialog shows (see ui/settings/agora-settings.js)
+    get settings() {
+        return {
+            account: { name: this.identity.name, detail: '(host de desenvolvimento)' },
+            device: {
+                describe: async () => ({ workspaces: (await this.list()).length, pending: 0, cacheEntries: (await this.#backend.cacheEntries()).length }),
+                clear: async () => {
+                    this.store.closeAll();
+                    await this.#backend.destroy();
+                    try { for (const key of Object.keys(localStorage).filter(k => k.startsWith('agora.'))) localStorage.removeItem(key); } catch { /* blocked */ }
+                },
+            },
+        };
+    }
+
     //Uses IndexedDB when it works and falls back to memory when it does not, so the app never opens "dead".
     static async create({ dbName = 'ultima-agora', probeTimeoutMs = 3000, ...options } = {}) {
         try {

@@ -44,6 +44,8 @@ export class Workspace {
     get id() { return this.#id; }
     //The workspace chat (ChatClient) when the store provides one: it is not part of the document (R-CHAT-2)
     get chat() { return this.#doc.chat ?? null; }
+    //The conference room (ConferenceRoom) when the store provides one: live media is never part of the document
+    get conference() { return this.#doc.conference ?? null; }
     //The client components receive as `this.domain`, already scoped to this workspace when the host supports it
     get domain() { return this.#domain?.forWorkspace?.(this.#id) ?? this.#domain; }
     get registry() { return this.#registry; }

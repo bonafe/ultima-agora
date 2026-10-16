@@ -12,10 +12,12 @@ import { issueToken, verifyToken, checkSecret, ROLES } from './auth.js';
 import { mayWrite } from './permissions.js';
 import { ChatLog, ChatError } from './chat.js';
 
-const MSG_SYNC = 0, MSG_AWARENESS = 1, MSG_CONTROL = 3, MSG_CHAT = 4;
+const MSG_SYNC = 0, MSG_AWARENESS = 1, MSG_CONTROL = 3, MSG_CHAT = 4, MSG_SIGNAL = 5;
 const CHAT_WRITERS = new Set(['owner', 'editor', 'participant']);        // viewers read the chat, they do not write (D-30)
 const CHAT_RATE = { perWindow: 20, windowMs: 10_000 };
 const CHAT_HISTORY = 100;
+const SIGNAL_RATE = { perWindow: 300, windowMs: 10_000 };      // ICE candidates come in bursts; this only stops a runaway client
+const SIGNAL_MAX_BYTES = 32 * 1024;
 const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 //Close codes (4xxx are ours). The client does not retry 4400/4401/4403/4404, and does retry 4408.
 export const CLOSE = { BAD_REQUEST: 4400, UNAUTHORIZED: 4401, FORBIDDEN: 4403, EXPIRED: 4408, TOO_BIG: 1009 };
@@ -111,6 +113,18 @@ class Connection {
         encoding.writeVarString(e, JSON.stringify(event));
         this.send(encoding.toUint8Array(e));
     }
+    signal(event) {
+        const e = encoding.createEncoder();
+        encoding.writeVarUint(e, MSG_SIGNAL);
+        encoding.writeVarString(e, JSON.stringify(event));
+        this.send(encoding.toUint8Array(e));
+    }
+    allowSignal(now = Date.now()) {
+        this.signals = (this.signals ?? []).filter(t => now - t < SIGNAL_RATE.windowMs);
+        if (this.signals.length >= SIGNAL_RATE.perWindow) return false;
+        this.signals.push(now);
+        return true;
+    }
     //At most CHAT_RATE.perWindow sends per window: a runaway client cannot flood the log
     allowChatSend(now = Date.now()) {
         this.chatSends = (this.chatSends ?? []).filter(t => now - t < CHAT_RATE.windowMs);
@@ -121,7 +135,7 @@ class Connection {
     close(code, reason) { this.socket.close(code, reason); }
 }
 
-export function createSyncServer({ secret, adminToken = null, dataDir = null, chatRetentionDays = 0, devAuth = false, maxMessageBytes = 2 * 1024 * 1024, log = () => {} } = {}) {
+export function createSyncServer({ secret, adminToken = null, dataDir = null, chatRetentionDays = 0, iceServers = null, devAuth = false, maxMessageBytes = 2 * 1024 * 1024, log = () => {} } = {}) {
     const key = checkSecret(secret, devAuth);
     if (dataDir) mkdirSync(dataDir, { recursive: true });
     const rooms = new Map();
@@ -209,6 +223,7 @@ export function createSyncServer({ secret, adminToken = null, dataDir = null, ch
         syncProtocol.writeSyncStep1(hello, room.doc);
         connection.send(encoding.toUint8Array(hello));
         connection.control({ type: 'role', role: connection.role });
+        if (iceServers) connection.control({ type: 'ice', iceServers });
         connection.chat({ type: 'history', ...room.chat.page({ limit: CHAT_HISTORY }) });
         const states = awarenessProtocol.encodeAwarenessUpdate(room.awareness, [...room.awareness.getStates().keys()]);
         if (room.awareness.getStates().size) {
@@ -246,12 +261,30 @@ export function createSyncServer({ secret, adminToken = null, dataDir = null, ch
             case MSG_CHAT:
                 onChat(room, connection, JSON.parse(decoding.readVarString(decoder)));
                 return;
+            case MSG_SIGNAL:
+                onSignal(room, connection, decoding.readVarString(decoder));
+                return;
             default:
                 throw new Error('unknown message type');
         }
     }
 
     let closed = false;
+
+    //Conference signalling (offer / answer / ICE) between two people of the SAME workspace. The server does not read it:
+    //it only checks who is talking to whom and stamps the sender, so a client cannot speak in someone else's name.
+    //Request: { to: <awareness clientId>, from: <one of the sender's own clientIds>, data }.  Delivery: { type: 'signal', from, user, data }.
+    function onSignal(room, connection, text) {
+        if (text.length > SIGNAL_MAX_BYTES) return connection.signal({ type: 'error', code: 'too_big', message: 'Sinal grande demais.' });
+        let request;
+        try { request = JSON.parse(text); } catch { return connection.signal({ type: 'error', code: 'bad_request', message: 'Sinal inválido.' }); }
+        if (!connection.allowSignal()) return connection.signal({ type: 'error', code: 'rate', ref: request.to ?? null, message: 'Sinais demais em pouco tempo.' });
+        if (!connection.clientIds.has(request.from)) return connection.signal({ type: 'error', code: 'bad_request', ref: request.to ?? null, message: 'Remetente desconhecido.' });
+        const target = [...room.connections].find(other => other.clientIds.has(request.to));
+        if (!target || target === connection) return connection.signal({ type: 'error', code: 'gone', ref: request.to ?? null, message: 'Destinatário não está no workspace.' });
+        target.signal({ type: 'signal', from: request.from, user: { id: connection.userId, name: connection.claims.name ?? connection.userId }, data: request.data });
+    }
+
     //Chat requests. A refused or invalid one answers the SENDER with { type: 'error', ref, code, message } and changes nothing.
     function onChat(room, connection, request) {
         const fail = (code, message) => connection.chat({ type: 'error', ref: request.clientId ?? request.id ?? null, code, message });

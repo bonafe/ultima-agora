@@ -1,0 +1,10 @@
+{
+  "name": "ultima-conference",
+  "tag": "ultima-conference",
+  "title": "Chamada",
+  "version": "1.0.0",
+  "category": "collaboration",
+  "description": "Áudio e vídeo com quem está no workspace, em tiles pequenos. Câmera e microfone só ligam quando você pede.",
+  "module": "./ultima-conference.js",
+  "capabilities": ["conference", "resizable"]
+}

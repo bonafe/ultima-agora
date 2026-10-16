@@ -1,0 +1,23 @@
+<link rel="stylesheet" href="ultima-conference.css">
+<div id="notice" role="note" hidden></div>
+<div id="errors" role="alert" hidden></div>
+<section id="lobby" hidden>
+    <p id="who" aria-live="polite"></p>
+    <form id="join" autocomplete="off">
+        <fieldset>
+            <legend>Ao entrar, ligar:</legend>
+            <label><input id="join-mic" type="checkbox"> Microfone</label>
+            <label><input id="join-cam" type="checkbox"> Câmera</label>
+        </fieldset>
+        <p class="hint">Nada é ligado sem a sua escolha. Dá para entrar só para ouvir e assistir, e ligar depois.</p>
+        <button id="enter" type="submit">Entrar na chamada</button>
+    </form>
+</section>
+<section id="call" hidden>
+    <div id="tiles" role="list" aria-label="Participantes da chamada"></div>
+    <div id="controls" role="toolbar" aria-label="Controles da chamada">
+        <button id="mic" type="button" aria-pressed="false">Microfone</button>
+        <button id="cam" type="button" aria-pressed="false">Câmera</button>
+        <button id="leave" type="button">Sair</button>
+    </div>
+</section>

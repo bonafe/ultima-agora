@@ -8,6 +8,7 @@ import { YjsWorkspaceDoc } from '../document/yjs_state_store.js';
 import { YjsPresence } from '../presence/presence.js';
 import { SyncProvider, webSocketTransport } from './sync_provider.js';
 import { ChatClient } from './chat_client.js';
+import { MeshProvider } from '../../conference/mesh/mesh_provider.js';
 
 const SAVE_DELAY_MS = 150;
 const PERSISTENCE = 'persistence';
@@ -53,6 +54,17 @@ export class YjsStateStore {
             });
         }
 
+        //The conference (D-36): media goes straight between browsers, only the signalling uses the sync connection
+        const signalListeners = new Set();
+        if (me && this.#sync) {
+            const signaling = {
+                clientId: ydoc.clientID,
+                send: (to, data) => provider?.sendSignal({ to, from: ydoc.clientID, data }) ?? false,
+                onSignal: fn => { signalListeners.add(fn); return () => signalListeners.delete(fn); },
+            };
+            doc.conference = new MeshProvider().connect({ roomId: workspaceId, signaling, presence: doc.presence, me, canPublish: () => doc.role !== 'viewer' });
+        }
+
         let timer = null;
         const refreshStatus = () => {
             doc.status = provider && provider.status !== 'synced' ? provider.status : (timer ? 'saving' : 'synced');
@@ -83,8 +95,10 @@ export class YjsStateStore {
                 },
                 onStatus: status => { refreshStatus(); if (status === 'synced') doc.chat?.onConnected(); },
                 onChat: event => doc.chat?.receive(event),
+                onSignal: event => { for (const fn of [...signalListeners]) fn(event); },
                 onControl: message => {
                     if (message.type === 'role') doc.role = message.role;
+                    if (message.type === 'ice') doc.conference?.setIceServers(message.iceServers);
                     if (message.type === 'closed' && message.code === 4403) doc.role = 'viewer';
                     doc._control(message);
                 },
@@ -116,6 +130,7 @@ export class YjsStateStore {
     closeAll() { for (const id of [...this.#docs.keys()]) this.forget(id); }
 
     forget(workspaceId) {
+        this.#docs.get(workspaceId)?.conference?.destroy();
         this.#docs.get(workspaceId)?.provider?.destroy();
         this.#docs.delete(workspaceId);
     }

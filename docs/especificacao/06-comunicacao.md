@@ -28,7 +28,7 @@ Conferência, chat, notas e whiteboard são **capacidades do workspace**. O Agor
 
 ### Abstração
 
-O núcleo não implementa WebRTC. Ele define o contrato:
+O núcleo não implementa uma pilha WebRTC. Ele define o contrato:
 
 ```text
 ConferenceProvider
@@ -40,11 +40,15 @@ ConferenceRoom
   disconnect()
 ```
 
-O componente `<ultima-conference>` usa um `ConferenceProvider` injetado. Implementações: `LiveKitProvider` (referência), `JitsiProvider` (alternativa, F3).
+O componente `<ultima-conference>` usa um `ConferenceProvider` injetado. Implementações (D-36):
 
-- **R-CONF-1** (F2). A sala da conferência é derivada do workspace (`roomId = workspaceId`) e as credenciais são emitidas pelo backend de forma curta, após verificação do papel (D-20).
+- `MeshProvider` (**padrão para grupos pequenos**, até cerca de 4–6 pessoas): cada navegador liga direto aos outros com `RTCPeerConnection` nativo. A sinalização (oferta, resposta, ICE) passa pelo `agora-sync`, que só a repassa entre pessoas do mesmo workspace (mensagem tipo 5); quem está na chamada e o estado de mídia vêm da presença. Sem servidor novo. Limites: banda e CPU crescem com o quadrado do número de participantes; o servidor **não consegue impedir** que um *viewer* envie mídia (o P2P não passa por ele), então o papel só controla a interface; entre redes diferentes pode precisar de TURN (`AGORA_ICE_SERVERS`).
+- `LiveKitProvider` (para escala, F3), `JitsiProvider` (alternativa, F3): atrás do mesmo contrato.
+
+- **R-CONF-1** (F2). A sala da conferência é derivada do workspace (`roomId = workspaceId`) e as credenciais são emitidas pelo backend de forma curta, após verificação do papel (D-20). No `MeshProvider` o crédito é o próprio token do `agora-sync`.
 - **R-CONF-2** (F2). A conferência **não ocupa a tela toda**. Os participantes aparecem como *tiles* pequenos e reposicionáveis sobre o workspace, ou numa barra. Há modo expandido sob demanda.
 - **R-CONF-3** (F2). O estado de mídia (microfone, câmera, falando) publica-se na presença (5.3), de modo que o restante da UI possa mostrar "quem está falando" sem acoplamento com o provider.
+- **R-CONF-7.** Câmera e microfone só funcionam em contexto seguro do navegador (HTTPS ou `localhost`): o ambiente de demonstração em rede local usa HTTPS (`docker-compose.yml`). Desligar a câmera ou o microfone **encerra** a captura (a luz do dispositivo apaga), não apenas silencia.
 - **R-CONF-4.** O compartilhamento de tela pode ser exibido como componente (`ultima-screen-share`, F3), que passa a ser uma instância no workspace.
 - **R-CONF-5.** Sem conferência, o workspace funciona completo. Falha no provider não afeta o resto.
 - **R-CONF-6. Implantação isolada.** Ambientes sem internet devem poder usar o LiveKit autoalojado. O Agora **não** pode depender de serviço de terceiros para a conferência (coerente com o Inteligência Aberta).

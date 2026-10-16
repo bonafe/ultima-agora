@@ -15,7 +15,7 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 
 ## Commands
 
-- Serve the repo root with any static server (`python3 -m http.server`) and open `/tests/`.
+- Serve the repo root with any static server (`python3 -m http.server`) and open `/tests/`. `docker compose up -d --build` runs app + `agora-sync` (see README); camera/microphone need `localhost` or HTTPS.
 - Three suites: `tests/run.sh` (browser, headless Chrome; also runs the coupling check and the precache check), `tests/run_acceptance.sh` (several clients against the real sync server — the MVP acceptance criteria, mapped in `docs/aceite-mvp.md`) and `cd server/agora-sync && npm test` (server, including the chat).
 - `tests/run.sh` runs the suite in headless Chrome and exits non-zero on failure (this is what CI runs).
 - Add a test with every bug fix. User-visible changes go in `CHANGELOG.md`.
@@ -33,8 +33,9 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 - `components/` — generic catalog (`ultima-text`, `ultima-notes`, markdown renderer). `ui/` — shell, palette, workspace view, inspector.
 - Run the app: serve the root and open `/` (hash route `#/workspace/<id>`).
 - `tests/` — zero-dependency browser tests, same runner shape as UltimaJS.
+- `conference/` — `ConferenceProvider`/`ConferenceRoom` contract and `mesh/` (`MeshProvider`: browser-native WebRTC in a full mesh, signalling relayed by `agora-sync`, D-36). Only providers touch `RTCPeerConnection`.
 
-Planned (see spec 55): `core/events`, `conference/`.
+Planned (see spec 55): `core/events`.
 
 ## Rules that matter
 

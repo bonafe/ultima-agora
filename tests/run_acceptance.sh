@@ -20,6 +20,7 @@ SYNC=$!
 python3 -m http.server "$WEB_PORT" >/dev/null 2>&1 &
 WEB=$!
 "$CHROME" --headless=new --no-sandbox --disable-gpu --user-data-dir="$PROFILE" --remote-debugging-port="$DEBUG_PORT" \
+    --use-fake-device-for-media-stream --use-fake-ui-for-media-stream \
     "http://localhost:$WEB_PORT/tests/acceptance/?sync=http://localhost:$SYNC_PORT" >/dev/null 2>&1 &
 BROWSER=$!
 trap 'kill $SYNC $WEB $BROWSER 2>/dev/null; rm -rf "$DATA" "$PROFILE"' EXIT

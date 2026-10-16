@@ -26,6 +26,8 @@ export class AgoraShell extends ReactiveComponent {
     #cleanup = [];
     #touchTimer = null;
     #chatElement = null;
+    #callElement = null;
+    #callRoom = null;
     #baseTitle = 'Ultima Agora';
 
     constructor() {
@@ -77,6 +79,7 @@ export class AgoraShell extends ReactiveComponent {
             await this.#refreshList();
         });
         on('#chat-toggle', 'click', () => this.#toggleChat());
+        on('#call-toggle', 'click', () => this.#toggleCall());
         on('#settings', 'click', () => this.#$('agora-settings').open({ host: this.#host }));
         this.rootNode.addEventListener('theme-change', event => this.#applyTheme(event.detail.theme));
         //After "limpar este dispositivo" nothing local remains, so start over (online: back through the host's own entry)
@@ -167,6 +170,7 @@ export class AgoraShell extends ReactiveComponent {
 
         showTitle(); applyRole(); showStatus(doc.status); showPeers();
         await this.#mountChat(workspace);
+        await this.#mountCall(workspace);
         this.#cleanup.push(
             doc.onHistory(() => this.#refreshHistory()),
             doc.onChange('meta.title', showTitle),
@@ -210,6 +214,51 @@ export class AgoraShell extends ReactiveComponent {
         this.#chatElement = element;
         this.#cleanup.push(chat.onChange(() => this.#paintUnread()), workspace.onRole(() => element.onRole?.(workspace.role)));
         this.#paintUnread();
+    }
+
+    // ---- call tray: the ultima-conference component, floating. It stays mounted (hidden) so the call goes on while it is closed ----
+
+    async #mountCall(workspace) {
+        const pane = this.#$('#call-pane');
+        this.#callRoom?.leave();                                  // switching workspace ends the call: it belongs to the workspace (R-SES-3)
+        this.#callElement?.dispose?.();
+        this.#callElement = this.#callRoom = null;
+        pane.replaceChildren();
+        pane.setAttribute('hidden', '');
+        this.#$('#call-toggle').setAttribute('aria-pressed', 'false');
+        const room = workspace.conference;
+        this.#$('#call-toggle').toggleAttribute('hidden', !room);
+        if (!room || !this.#registry.has('ultima-conference')) return;
+
+        await this.#registry.load('ultima-conference');
+        const manifest = this.#registry.getManifest('ultima-conference');
+        const element = document.createElement(manifest.tag);
+        element.attach({ instanceId: 'shell-call', manifest, config: {}, services: { conference: room } });
+        pane.append(element);
+        this.#callElement = element;
+        this.#callRoom = room;
+        this.#cleanup.push(room.on('change', () => this.#paintCall()), workspace.onRole(() => element.onRole?.(workspace.role)));
+        this.#paintCall();
+    }
+
+    #toggleCall() {
+        const pane = this.#$('#call-pane');
+        const open = pane.hasAttribute('hidden');
+        pane.toggleAttribute('hidden', !open);
+        this.#$('#call-toggle').setAttribute('aria-pressed', String(open));
+    }
+
+    //Count on the button = people in the call; green border = I am in it
+    #paintCall() {
+        const room = this.#callRoom;
+        const count = room ? room.participants.length : 0;
+        const badge = this.#$('#call-badge');
+        badge.textContent = String(count);
+        badge.toggleAttribute('hidden', count === 0);
+        this.#$('#call-toggle').classList.toggle('live', !!room?.joined);
+        const label = room?.joined ? `Chamada: você está na chamada com ${count} pessoa(s)` : count ? `Chamada: ${count} pessoa(s) na chamada` : 'Chamada de áudio e vídeo';
+        this.#$('#call-toggle').setAttribute('aria-label', label);
+        this.#$('#call-toggle').title = label;
     }
 
     #toggleChat() {

@@ -16,7 +16,7 @@ Acrescentar capacidades **opcionais** não quebra o contrato.
 | `outputs.<porta>` | `{ type, retained? }` — `retained: false` entrega uma vez, sem repetir a quem chega depois |
 | `actions.<nome>` | `{ title, effect: self\|state\|emit\|feed\|create, port?, produces?, suggests?, autoCreate? }` |
 | `config.<campo>` | `{ type, default?, min?, max?, values?, title? }` |
-| `capabilities` | `connectable`, `shared-content`, `presence-aware`, `domain-data`, `chat`, `resizable`, … (`chat` was added after the freeze: adding an OPTIONAL capability does not break contract v1) |
+| `capabilities` | `connectable`, `shared-content`, `presence-aware`, `domain-data`, `chat`, `conference`, `resizable`, … (`chat` and `conference` were added after the freeze: adding an OPTIONAL capability does not break contract v1) |
 
 Regras de ação: `emit` e `create` exigem `port` (saída do próprio componente); `create` exige `produces`, igual ao tipo
 dessa saída. `suggests` ordena os componentes oferecidos para exibir o resultado.

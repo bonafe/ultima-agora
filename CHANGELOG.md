@@ -2,10 +2,18 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (conference — camera and microphone)
+
+### Added
+- **Call with audio and video** (`ultima-conference`, capability `conference`; 📹 button and floating tray in the shell): `ConferenceProvider`/`ConferenceRoom` contract (`conference/`) and `MeshProvider` — browser-native WebRTC in a full mesh (D-36; spec 06 updated). Who is in the call and who is speaking come from presence (R-CONF-3); the media goes straight between browsers.
+- Mic and camera never turn on by themselves: the person ticks them before joining; turning them off (or leaving) stops the capture so the device light goes out. A viewer can watch and listen but the interface does not offer publishing (the server cannot stop a P2P viewer: documented limit). A refused device does not keep the person out of the call; errors are explained in Portuguese. A peer that disappears from presence for a moment (server hiccup) keeps its connection for 5 s.
+- `agora-sync`: signalling relay (message type 5) between two people of the SAME workspace, with the sender taken from the connection (cannot forge another client id), size and rate limits; `AGORA_ICE_SERVERS` (JSON) announces STUN/TURN to the clients. `SyncProvider.sendSignal` / `onSignal`.
+- Tests: 6 mesh tests with real `RTCPeerConnection`s and synthetic media (no permission or hardware needed), 4 server tests, and E24 in the acceptance suite (real server, fake devices, video frames checked in both directions).
+
 ## Unreleased (docker)
 
 ### Added
-- `docker-compose.yml`: app estático (nginx, porta 8080) + `agora-sync` (porta 8787, volume `agora-data`) para testar a colaboração em várias máquinas. Usa `AGORA_DEV_AUTH=1`: apenas para rede confiável.
+- `docker-compose.yml`: app (nginx, 8080 and **HTTPS 8443** with a self-signed certificate covering `AGORA_HOSTS`, because camera and microphone need a secure context) + `agora-sync` (8787, volume `agora-data`), with the realtime server also reachable at `/sync/` on the same origin. Uses `AGORA_DEV_AUTH=1`: trusted networks only.
 
 ## Unreleased (M5 — chat and MVP acceptance)
 

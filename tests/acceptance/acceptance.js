@@ -359,6 +359,43 @@ test('F23 keyboard and screen reader: every control is a native, named, focusabl
     } finally { shell.remove(); history.replaceState(null, '', location.pathname + location.search + saved); await host.destroy(); }
 });
 
+
+// ---------------------------------------------------------------- Conference (D-36): signalling through the REAL server, media between the browsers
+
+const framesFlow = stream => new Promise(resolve => {
+    const video = Object.assign(document.createElement('video'), { muted: true, autoplay: true, playsInline: true, srcObject: stream });
+    video.play().catch(() => {});
+    const done = ok => { clearInterval(timer); clearTimeout(limit); video.srcObject = null; resolve(ok); };
+    const timer = setInterval(() => { if (video.videoWidth > 0) done(true); }, 50);
+    const limit = setTimeout(() => done(false), 8000);
+});
+
+test('E24 conference: two people see and hear each other through the real server; a viewer watches but cannot publish; leaving is seen at once', guard(async people => {
+    const [maria, carlos, visitor] = await team(people, ['Maria', 'owner'], ['Carlos', 'editor'], ['Visitante', 'viewer']);
+    assert(await until(() => maria.doc.conference && carlos.doc.conference && visitor.doc.conference), 'every client has a conference room');
+    const rooms = { maria: maria.doc.conference, carlos: carlos.doc.conference, visitor: visitor.doc.conference };
+    assert(rooms.maria.participants.length === 0 && rooms.maria.supported, 'nobody is in the call, and nothing was asked of the devices');
+
+    await rooms.maria.join({ mic: true, cam: true });
+    const started = performance.now();
+    await rooms.carlos.join({ mic: true, cam: true });
+    const named = (room, name) => room.participants.find(p => p.user.name === name);
+    assert(await until(() => named(rooms.maria, 'Carlos')?.stream?.getTracks().length === 2 && named(rooms.carlos, 'Maria')?.stream?.getTracks().length === 2, 8000), 'both receive audio and video');
+    assert(await framesFlow(named(rooms.maria, 'Carlos').stream) && await framesFlow(named(rooms.carlos, 'Maria').stream), 'video frames arrive in both directions');
+    info(`E24 conference: Carlos joined and the media flowed both ways in ${(performance.now() - started).toFixed(0)}ms`);
+    assert(named(rooms.maria, 'Carlos').mic && named(rooms.maria, 'Carlos').cam, "the others see Carlos's media state through presence");
+
+    await rooms.visitor.join();
+    assert(await until(() => named(rooms.visitor, 'Maria')?.stream?.getTracks().length === 2 && named(rooms.visitor, 'Carlos')?.stream?.getTracks().length === 2, 8000), 'the viewer receives both');
+    assert(await framesFlow(named(rooms.visitor, 'Maria').stream), 'and sees the video');
+    try { await rooms.visitor.setMic(true); throw new Error('accepted'); } catch (error) { assert(error.code === 'forbidden', error.message); }
+
+    rooms.carlos.leave();
+    assert(await until(() => !named(rooms.maria, 'Carlos') && !named(rooms.visitor, 'Carlos'), 3000), 'Carlos is gone from the others at once');
+    assert(await until(() => named(rooms.maria, 'Visitante')), 'the viewer is still listed');
+    rooms.maria.destroy(); rooms.visitor.destroy();
+}));
+
 // ---------------------------------------------------------------- runner
 
 console.log = () => {};

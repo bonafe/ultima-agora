@@ -1,5 +1,5 @@
 {
- "version": "8908939e24967aad",
+ "version": "7f661415899c779a",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -15,6 +15,10 @@
   "components/chat/ultima-chat.html",
   "components/chat/ultima-chat.js",
   "components/chat/ultima-chat.manifest.json",
+  "components/conference/ultima-conference.css",
+  "components/conference/ultima-conference.html",
+  "components/conference/ultima-conference.js",
+  "components/conference/ultima-conference.manifest.json",
   "components/graph/ultima-graph.css",
   "components/graph/ultima-graph.html",
   "components/graph/ultima-graph.js",

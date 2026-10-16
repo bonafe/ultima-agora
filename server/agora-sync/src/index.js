@@ -1,6 +1,11 @@
 import { createSyncServer } from './server.js';
 
 const devAuth = process.env.AGORA_DEV_AUTH === '1';
+let iceServers = null;
+if (process.env.AGORA_ICE_SERVERS) {
+    try { iceServers = JSON.parse(process.env.AGORA_ICE_SERVERS); if (!Array.isArray(iceServers)) throw new Error('not a list'); }
+    catch (error) { console.error(`[agora-sync] AGORA_ICE_SERVERS must be a JSON list of RTCIceServer (${error.message})`); process.exit(1); }
+}
 let server;
 try {
     server = createSyncServer({
@@ -8,6 +13,7 @@ try {
         adminToken: process.env.AGORA_SYNC_ADMIN_TOKEN || null,
         dataDir: process.env.DATA_DIR ?? './data',
         chatRetentionDays: Number(process.env.CHAT_RETENTION_DAYS ?? 0) || 0,
+        iceServers,
         devAuth,
         log: message => console.log(`[agora-sync] ${message}`),
     });

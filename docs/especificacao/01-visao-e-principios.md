@@ -41,7 +41,7 @@ O Agora **não é** um sistema de videoconferência, um whiteboard, um dashboard
 Mantém-se a lista da proposta e acrescentam-se itens que precisam ser explícitos:
 
 - Substituto completo do Miro, do BigBlueButton, de IDE visual, de plataforma no-code, de editor gráfico profissional, de motor de workflow ou de framework de IA.
-- Implementação própria de WebRTC.
+- Pilha própria de WebRTC (codecs, transporte, SFU). Usa-se a API nativa do navegador (`RTCPeerConnection`) para o provider em malha e o LiveKit para escala (D-36).
 - **Reescrever o UltimaJS.** O Agora o usa como está, com no máximo contribuições pequenas e compatíveis.
 - **Ser o banco de dados da aplicação.** O documento colaborativo não armazena entidades de domínio (ver 02 e 05).
 - **Substituir telas tradicionais.** Formulários e páginas continuam válidos e convivem com os workspaces (seção 50 da proposta).

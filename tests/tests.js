@@ -14,6 +14,8 @@ import { SyncProvider } from '../collaboration/providers/sync_provider.js';
 import { YjsPresence } from '../collaboration/presence/presence.js';
 import { IndexedDbBackend } from '../collaboration/providers/indexeddb_persistence.js';
 import { ChatClient } from '../collaboration/providers/chat_client.js';
+import { MeshProvider } from '../conference/mesh/mesh_provider.js';
+import { ConferenceError } from '../conference/conference_provider.js';
 import { uuid } from '../core/ids.js';
 import { TypeRegistry, registerCoreTypes } from '../core/connections/types.js';
 import { BusError } from '../core/connections/bus.js';
@@ -689,6 +691,7 @@ const servicesFor = (manifest, emitted) => {
     }
     if (capabilities.includes('presence-aware')) services.presence = { setActivity: () => {} };
     if (capabilities.includes('domain-data')) services.domain = { get: async () => ({ results: [] }), forWorkspace() { return this; } };
+    if (capabilities.includes('conference')) services.conference = new MeshProvider({ mediaDevices: null }).connect({ roomId: 'contract', me: { id: 'u', name: 'U' }, signaling: { clientId: 1, send: () => false, onSignal: () => () => {} }, presence: { local: {}, setLocal() {}, peers: () => [], onPeers: () => () => {} } });
     if (capabilities.includes('chat')) services.chat = new ChatClient({ workspaceId: 'contract', me: { id: 'u', name: 'U' }, send: () => false });
     services.setConfig = () => [];
     return services;
@@ -698,7 +701,7 @@ test('contract: every component of the catalog honours the AgoraComponent contra
     const registry = new ComponentRegistry();
     await registerCoreComponents(registry);
     const manifests = registry.list();
-    for (const name of ['ultima-text', 'ultima-notes', 'ultima-table', 'ultima-graph', 'ultima-chat']) assert(manifests.some(m => m.name === name), `the catalog lost ${name}`);
+    for (const name of ['ultima-text', 'ultima-notes', 'ultima-table', 'ultima-graph', 'ultima-chat', 'ultima-conference']) assert(manifests.some(m => m.name === name), `the catalog lost ${name}`);
 
     for (const manifest of manifests) {
         const label = manifest.name;
@@ -743,7 +746,7 @@ test('contract: every component of the catalog honours the AgoraComponent contra
         assert(json !== undefined && json.length < 2000 && JSON.stringify(JSON.parse(json)) === json, `${label}: describeContext is not small, plain JSON`);
 
         //Capabilities it did not declare stay closed (R-CAP-1)
-        for (const [service, capability] of [['shared', 'shared-content'], ['chat', 'chat'], ['domain', 'domain-data'], ['presence', 'presence-aware']]) {
+        for (const [service, capability] of [['shared', 'shared-content'], ['chat', 'chat'], ['conference', 'conference'], ['domain', 'domain-data'], ['presence', 'presence-aware']]) {
             if (!(manifest.capabilities ?? []).includes(capability)) { try { void element[service]; throw new Error('open'); } catch (error) { assert(error.message.includes(capability), `${label}: "${service}" must need "${capability}"`); } }
         }
 
@@ -1099,7 +1102,7 @@ test('palette: lists registered components, filters by search and announces addi
     palette.registry = registry;
     await wait(50);
     const items = () => [...palette.rootNode.querySelectorAll('button.item')];
-    assert(items().length === 5);
+    assert(items().length === 6);
     const search = palette.rootNode.querySelector('#search');
     search.value = 'markdown'; search.dispatchEvent(new Event('input'));
     assert(items().length === 1 && items()[0].textContent.startsWith('Notas'));
@@ -1758,6 +1761,174 @@ test('yjs doc runs the whole workspace: instances, bus connections, layout and u
     assert(workspace.bus.list().length === 0);
     workspace.doc.undo();
     assert(workspace.bus.list().length === 1 && workspace.instance(b));
+});
+
+// --- conference (mesh): real RTCPeerConnections in this page, synthetic cameras and microphones ---
+
+//A camera (canvas) and a microphone (oscillator) that need no permission and no hardware
+const syntheticMedia = () => {
+    const requests = [];
+    const stops = [];
+    return {
+        requests,
+        stops,
+        async getUserMedia(constraints) {
+            requests.push(Object.keys(constraints).join());
+            if (constraints.video) {
+                const canvas = Object.assign(document.createElement('canvas'), { width: 160, height: 90 });
+                const context = canvas.getContext('2d');
+                let n = 0;
+                const timer = setInterval(() => { context.fillStyle = `hsl(${(n += 20) % 360} 80% 50%)`; context.fillRect(0, 0, 160, 90); }, 40);
+                const stream = canvas.captureStream(25);
+                stream.getVideoTracks()[0].addEventListener('ended', () => clearInterval(timer));
+                const track = stream.getVideoTracks()[0];
+                const stop = track.stop.bind(track);
+                track.stop = () => { clearInterval(timer); stops.push('video'); stop(); };
+                return stream;
+            }
+            const audioContext = new AudioContext();
+            const oscillator = audioContext.createOscillator();
+            const destination = audioContext.createMediaStreamDestination();
+            oscillator.connect(destination);
+            oscillator.start();
+            const track = destination.stream.getAudioTracks()[0];
+            const stop = track.stop.bind(track);
+            track.stop = () => { stops.push('audio'); stop(); audioContext.close().catch(() => {}); };
+            return destination.stream;
+        },
+    };
+};
+
+//A small "room": presence and signalling shared by the people in it, with no server
+const newCall = () => {
+    const states = new Map();                // clientId -> local presence state
+    const people = new Map();                // clientId -> { notify, deliver }
+    let nextId = 100;
+    const join = (name, { canPublish = true, media = syntheticMedia() } = {}) => {
+        const clientId = nextId++;
+        const user = { id: `u${clientId}`, name };
+        const listeners = new Set();
+        const presence = {
+            get local() { return states.get(clientId) ?? {}; },
+            setLocal(patch) { states.set(clientId, { ...(states.get(clientId) ?? {}), ...patch }); for (const other of people.values()) other.notify(); },
+            peers: () => [...states].filter(([id]) => id !== clientId).map(([id, state]) => ({ clientId: id, ...state })),
+            onPeers: fn => { listeners.add(fn); return () => listeners.delete(fn); },
+        };
+        const signalListeners = new Set();
+        const signaling = {
+            clientId,
+            send: (to, data) => { queueMicrotask(() => people.get(to)?.deliver({ type: 'signal', from: clientId, user, data })); return people.has(to); },
+            onSignal: fn => { signalListeners.add(fn); return () => signalListeners.delete(fn); },
+        };
+        people.set(clientId, { notify: () => listeners.forEach(fn => fn()), deliver: event => signalListeners.forEach(fn => fn(event)) });
+        presence.setLocal({ user });
+        const room = new MeshProvider({ mediaDevices: media }).connect({ roomId: 'call', signaling, presence, me: user, canPublish: () => canPublish });
+        return { room, media, user, clientId, leaveNetwork: () => { states.delete(clientId); people.delete(clientId); for (const other of people.values()) other.notify(); } };
+    };
+    return { join };
+};
+const untilTrue = async (condition, ms = 8000) => { const end = performance.now() + ms; while (performance.now() < end) { if (await condition()) return true; await wait(40); } return false; };
+const playing = stream => new Promise(resolve => {
+    const video = Object.assign(document.createElement('video'), { muted: true, autoplay: true, playsInline: true, srcObject: stream });
+    const done = ok => { clearInterval(timer); clearTimeout(limit); const why = `w${video.videoWidth} t${video.currentTime} rs${video.readyState} paused${video.paused} tracks${stream.getTracks().map(t => t.kind + ':' + t.readyState + (t.muted ? ':muted' : '')).join()}`; video.srcObject = null; playing.last = why; resolve(ok); };
+    video.play().catch(() => {});
+    const timer = setInterval(() => { if (video.videoWidth > 0) done(true); }, 50);
+    const limit = setTimeout(() => done(false), 8000);
+});
+const remote = (room, clientId) => room.participants.find(p => p.clientId === clientId);
+
+test('conference: before anyone joins, nothing is captured and nothing is connected', async () => {
+    const call = newCall();
+    const ana = call.join('Ana');
+    assert(!ana.room.joined && ana.room.participants.length === 0 && ana.media.requests.length === 0);
+    await ana.room.join();                                   // joining alone and without media: no permission is asked
+    assert(ana.room.joined && ana.media.requests.length === 0, 'mic/cam never turn on by themselves');
+    assert(ana.room.participants.length === 1 && !ana.room.participants[0].mic && !ana.room.participants[0].cam);
+    ana.room.destroy();
+});
+
+test('conference: two people join with mic and camera, real media flows both ways, and leaving stops the devices', async () => {
+    const call = newCall();
+    const ana = call.join('Ana'), bia = call.join('Bia');
+    await ana.room.join({ mic: true, cam: true });
+    await bia.room.join({ mic: true, cam: true });
+    assert(await untilTrue(() => remote(ana.room, bia.clientId)?.stream?.getTracks().length === 2 && remote(bia.room, ana.clientId)?.stream?.getTracks().length === 2), 'both receive audio and video tracks');
+    assert(await playing(remote(ana.room, bia.clientId).stream), `Ana sees Bia's video frames (${playing.last})`);
+    assert(await playing(remote(bia.room, ana.clientId).stream), "Bia sees Ana's video frames");
+    const seen = ana.room.participants;
+    assert(seen[0].self && seen[0].mic && seen[0].cam && seen.length === 2, 'me first, with my own media state');
+    assert(remote(ana.room, bia.clientId).mic && remote(ana.room, bia.clientId).cam, "Bia's state comes through presence");
+
+    ana.room.leave();
+    assert(ana.media.stops.includes('audio') && ana.media.stops.includes('video'), 'leaving stops the capture (the device light goes out)');
+    assert(await untilTrue(() => !remote(bia.room, ana.clientId)), 'Bia no longer lists Ana');
+    bia.room.destroy(); ana.room.destroy();
+});
+
+test('conference: turning the mic or camera off stops the capture and tells the others; turning it on again works without renegotiating', async () => {
+    const call = newCall();
+    const ana = call.join('Ana'), bia = call.join('Bia');
+    await ana.room.join({ cam: true });
+    await bia.room.join();                                   // a listener: sends nothing, receives
+    assert(await untilTrue(() => remote(bia.room, ana.clientId)?.stream?.getVideoTracks().length === 1));
+    assert(await playing(remote(bia.room, ana.clientId).stream), 'the listener sees the camera');
+    assert(bia.media.requests.length === 0, 'the listener never asked for a device');
+
+    await ana.room.setCam(false);
+    assert(ana.media.stops.includes('video') && !ana.room.participants[0].cam);
+    assert(await untilTrue(() => remote(bia.room, ana.clientId).cam === false), 'the others see the camera off');
+    await ana.room.setMic(true);
+    assert(await untilTrue(() => remote(bia.room, ana.clientId).mic === true));
+    await ana.room.setCam(true);
+    assert(await untilTrue(async () => remote(bia.room, ana.clientId).cam === true && await playing(remote(bia.room, ana.clientId).stream)), 'the camera comes back on the same connection');
+    ana.room.destroy(); bia.room.destroy();
+});
+
+test('conference: three people connect in a full mesh', async () => {
+    const call = newCall();
+    const people = ['Ana', 'Bia', 'Caio'].map(name => call.join(name));
+    for (const person of people) await person.room.join({ mic: true });
+    assert(await untilTrue(() => people.every(a => people.filter(b => b !== a).every(b => remote(a.room, b.clientId)?.stream?.getAudioTracks().length === 1))), 'everyone hears everyone');
+    people.forEach(person => person.room.destroy());
+});
+
+test('conference: a viewer listens but cannot publish; a refused device does not keep the person out of the call', async () => {
+    const call = newCall();
+    const viewer = call.join('Leitor', { canPublish: false });
+    await viewer.room.join();
+    for (const act of [() => viewer.room.setMic(true), () => viewer.room.setCam(true)]) {
+        try { await act(); throw new Error('allowed'); } catch (error) { assert(error instanceof ConferenceError && error.code === 'forbidden', error.message); }
+    }
+    assert(viewer.media.requests.length === 0, 'the device was never even requested');
+
+    const denied = call.join('Bloqueada', { media: { getUserMedia: async () => { throw Object.assign(new Error('x'), { name: 'NotAllowedError' }); } } });
+    const { errors } = await denied.room.join({ mic: true, cam: true });
+    assert(denied.room.joined && errors.length === 2 && errors.every(e => e.code === 'denied' && /permiss/i.test(e.message)));
+    assert(!denied.room.participants[0].mic && !denied.room.participants[0].cam);
+    viewer.room.destroy(); denied.room.destroy();
+});
+
+test('conference: events say who joined, left and was heard; an unsupported context explains why', async () => {
+    const call = newCall();
+    const ana = call.join('Ana'), bia = call.join('Bia');
+    const events = [];
+    ana.room.on('participant-joined', e => events.push(`joined:${e.user.name}`));
+    ana.room.on('participant-left', () => events.push('left'));
+    ana.room.on('track-subscribed', e => events.push(`track:${e.kind}`));
+    await ana.room.join({ mic: true });
+    await bia.room.join({ mic: true });
+    assert(await untilTrue(() => events.includes('track:audio')), 'no track event: ' + events.join());
+    bia.room.leave();
+    assert(await untilTrue(() => events.includes('left')), 'no left event: ' + events.join());
+    assert(events.includes('joined:Bia'), events.join());
+    ana.room.destroy(); bia.room.destroy();
+
+    const none = new MeshProvider({ mediaDevices: null }).connect({
+        roomId: 'x', me: { id: 'u', name: 'U' }, signaling: { clientId: 1, send: () => false, onSignal: () => () => {} },
+        presence: { local: {}, setLocal() {}, peers: () => [], onPeers: () => () => {} },
+    });
+    assert(!none.supported && none.unsupportedReason.length > 10);
+    try { await none.join({ mic: true }); throw new Error('joined'); } catch (error) { assert(error.code === 'unsupported'); }
 });
 
 // --- runner ---

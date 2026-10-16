@@ -5,6 +5,7 @@ export const CORE_MANIFESTS = [
     './table/ultima-table.manifest.json',
     './graph/ultima-graph.manifest.json',
     './chat/ultima-chat.manifest.json',
+    './conference/ultima-conference.manifest.json',
 ];
 
 export async function registerCoreComponents(registry) {

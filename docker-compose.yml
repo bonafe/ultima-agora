@@ -1,18 +1,32 @@
-# Dev/demo stack: static app (nginx) + realtime server. DEV AUTH is on: anyone who can reach port 8787 can
-# get a token. Use on a trusted network only. Production: see server/agora-sync/README.md.
+# Dev/demo stack: the app and a reverse proxy (nginx) + the realtime server.
+#   http://localhost:8080/    and    https://<host>:8443/    (same site; https is required for camera and microphone
+#   on other machines). The proxy serves the realtime server at /sync/, so open the app with
+#       ?sync=https://<host>:8443/sync        (or ?sync=http://localhost:8080/sync on this machine)
+# Set AGORA_HOSTS to the IP/name other machines use (it goes into the certificate), e.g.
+#       AGORA_HOSTS=192.168.2.155 docker compose up -d --build
+# DEV AUTH is on: anyone who can reach the server gets a token. Use on a trusted network only.
+# Production: see server/agora-sync/README.md.
 services:
   app:
-    image: nginx:alpine
-    ports: ["8080:80"]
+    build: ./docker/proxy
+    ports: ["8080:80", "8443:443"]
+    environment:
+      AGORA_HOSTS: ${AGORA_HOSTS:-}
     volumes:
       - ./:/usr/share/nginx/html:ro
+      - agora-certs:/etc/nginx/certs
+    depends_on: [sync]
   sync:
     build: ./server/agora-sync
     ports: ["8787:8787"]
     environment:
       AGORA_DEV_AUTH: "1"
+      # Optional STUN/TURN for calls between different networks, e.g.
+      #   AGORA_ICE_SERVERS: '[{"urls":"turn:turn.example:3478","username":"u","credential":"c"}]'
+      AGORA_ICE_SERVERS: ${AGORA_ICE_SERVERS:-}
     volumes:
       - agora-data:/data
     restart: unless-stopped
 volumes:
   agora-data:
+  agora-certs:

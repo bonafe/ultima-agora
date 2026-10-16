@@ -1,0 +1,18 @@
+# Dev/demo stack: static app (nginx) + realtime server. DEV AUTH is on: anyone who can reach port 8787 can
+# get a token. Use on a trusted network only. Production: see server/agora-sync/README.md.
+services:
+  app:
+    image: nginx:alpine
+    ports: ["8080:80"]
+    volumes:
+      - ./:/usr/share/nginx/html:ro
+  sync:
+    build: ./server/agora-sync
+    ports: ["8787:8787"]
+    environment:
+      AGORA_DEV_AUTH: "1"
+    volumes:
+      - agora-data:/data
+    restart: unless-stopped
+volumes:
+  agora-data:

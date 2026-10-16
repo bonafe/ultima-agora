@@ -2,6 +2,11 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (docker)
+
+### Added
+- `docker-compose.yml`: app estático (nginx, porta 8080) + `agora-sync` (porta 8787, volume `agora-data`) para testar a colaboração em várias máquinas. Usa `AGORA_DEV_AUTH=1`: apenas para rede confiável.
+
 ## Unreleased (M5 — chat and MVP acceptance)
 
 ### Added

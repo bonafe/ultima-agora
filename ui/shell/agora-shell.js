@@ -44,6 +44,7 @@ export class AgoraShell extends ReactiveComponent {
     #callElement = null;
     #callRoom = null;
     #compact = false;
+    #pipWas = null;                     //was the call window shown before the automatic Picture-in-Picture took it?
     #callFull = false;                  //compact: the call fills the screen (else it is a mini-bar, or hidden)
     #mini = null;
     #baseTitle = 'Ultima Agora';
@@ -291,6 +292,38 @@ export class AgoraShell extends ReactiveComponent {
         this.#callRoom = room;
         this.#cleanup.push(room.on('change', () => this.#paintCall()), workspace.onRole(() => element.onRole?.(workspace.role)));
         this.#paintCall();
+        this.#watchAutoPip(element);
+    }
+
+    //Like Google Meet: leaving the tab during a call puts the call in a Picture-in-Picture window (Chrome/Edge calls the
+    //`enterpictureinpicture` Media Session action when the page is capturing; it counts as the user gesture). Coming back
+    //puts the call where it was before.
+    #watchAutoPip(element) {
+        const session = navigator.mediaSession;
+        if (!session) return;
+        const view = this.#$('agora-workspace');
+        const start = async () => {
+            if (this.#compact || this.#callElement !== element || !view.pipAvailable) return;
+            this.#pipWas ??= view.isPersonalShown(CALL_WINDOW);
+            if (!this.#pipWas) view.showPersonal(CALL_WINDOW, { title: 'Chamada', element, park: this.#$('#call-pane') });
+            if (!await view.pip(CALL_WINDOW)) this.#pipBack();
+        };
+        const back = () => { if (!document.hidden) this.#pipBack(); };
+        try { session.setActionHandler('enterpictureinpicture', start); } catch { return; }      // not supported: the menu item still works
+        document.addEventListener('visibilitychange', back);
+        this.#cleanup.push(() => {
+            document.removeEventListener('visibilitychange', back);
+            try { session.setActionHandler('enterpictureinpicture', null); } catch { /* gone */ }
+        });
+    }
+
+    #pipBack() {
+        const view = this.#$('agora-workspace');
+        const was = this.#pipWas;
+        this.#pipWas = null;
+        if (was === null) return;
+        view.hidePersonal(CALL_WINDOW);
+        if (was && this.#callElement) view.showPersonal(CALL_WINDOW, { title: 'Chamada', element: this.#callElement, park: this.#$('#call-pane') });
     }
 
     #toggleCall() {

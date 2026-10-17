@@ -802,6 +802,33 @@ test('view: popping out moves the live element into the other window and docking
     frame.remove();
 });
 
+test('view: Picture-in-Picture moves the live element in, docking brings it back, closing it docks; a refusal floats and tells the person', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    const frame = document.createElement('iframe');         //stands in for the PiP window
+    document.body.append(frame);
+    let asked = null;
+    view.requestPip = async options => { asked = options; return frame.contentWindow; };
+    assert(view.pipAvailable);
+    const notes = instanceElement(view, b);
+    assert(await view.pip(b) === true && asked.width > 0 && asked.height > 0);
+    await wait(100);
+    assert(notes.ownerDocument === frame.contentDocument && instanceElement(view, b) === null, 'not moved');
+    view.dock(b);
+    await wait(100);
+    assert(notes.ownerDocument === document && instanceElement(view, b) === notes);
+    await view.pip(b);
+    await wait(100);
+    frame.contentWindow.dispatchEvent(new Event('pagehide'));
+    await wait(100);
+    assert(!view.isDetached(b) && notes.ownerDocument === document, 'closing must dock');
+    let notice = null;
+    view.addEventListener('view-notice', event => { notice = event.detail.message; });
+    view.requestPip = async () => { throw new Error('needs a gesture'); };
+    assert(await view.pip(b) === false && notice && view.rootNode.querySelector('#floats .float'), 'a refusal must float and tell');
+    frame.remove();
+});
+
 test('view: a blocked pop-up falls back to a floating window and tells the person', async () => {
     const { view, workspace } = await mountView();
     const { b } = await addTwo(view, workspace);

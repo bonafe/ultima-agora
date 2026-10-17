@@ -9,7 +9,7 @@ import { h } from '../dom.js';
 import { COMPONENT_MIME } from '../palette/agora-palette.js';
 import { dropTargetAt, placement } from './drop_targets.js';
 import { createFloatFrame } from './float_frame.js';
-import { openPopout } from './popout.js';
+import { openPopout, openPip, pipSupported } from './popout.js';
 import { buildCompactBar, buildSheet } from './compact_bar.js';
 import { flattenTree } from '../../core/workspace/layout.js';
 
@@ -43,6 +43,8 @@ export class AgoraWorkspaceView extends ReactiveComponent {
 
     //How a new browser window is opened (tests replace it)
     openWindow = (...args) => window.open(...args);
+    requestPip = undefined;         //test seam for documentPictureInPicture.requestWindow; also lets a test pretend support
+    get pipAvailable() { return this.requestPip !== undefined || pipSupported(this.ownerDocument.defaultView ?? window); }
 
     constructor() {
         super({ templateUrl: './agora-workspace.html', shadowDom: true }, import.meta.url);
@@ -328,7 +330,8 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         const item = (label, action) => h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); action(); } }, label);
         const detach = this.#detached.has(instanceId)
             ? [item('Reacoplar ao painel', () => this.dock(instanceId))]
-            : [item('Destacar em janela flutuante', () => this.float(instanceId)), item('Destacar em outra janela do navegador', () => this.popout(instanceId))];
+            : [item('Destacar em janela flutuante', () => this.float(instanceId)), item('Destacar em outra janela do navegador', () => this.popout(instanceId)),
+                ...(this.pipAvailable ? [item('Fixar por cima de tudo (PiP)', () => this.pip(instanceId))] : [])];
         const personal = this.#personal.has(instanceId) ? [item('Esconder (a chamada continua)', () => this.hidePersonal(instanceId))] : [];
         const structure = this.#workspace.readOnly || personal.length ? personal : [
             ...MENU_ITEMS.map(([side, label]) => item(label, () => this.#workspace.moveInstance(instanceId, { panelId, side }))),
@@ -490,6 +493,32 @@ export class AgoraWorkspaceView extends ReactiveComponent {
             return false;
         }
         this.#adopt(id, { kind: 'window', popout, body: popout.body });
+        this.#announce(id);
+        return true;
+    }
+
+    //Shows the component in a Picture-in-Picture window: small, on top of every application, one at a time.
+    //Needs a user gesture (the menu click) or the browser's own trigger. Falls back to a floating window when refused.
+    async pip(id) {
+        const label = this.#labelOf(id);
+        if (label === null || !this.loaded || !this.pipAvailable) return false;
+        const current = this.#detached.get(id);
+        if (current?.kind === 'window' && current.pip) { current.popout.focus(); return true; }
+        const size = current?.frame?.rect ?? this.#defaultRect(id);
+        const popout = await openPip({
+            title: label, rect: { w: Math.min(Math.max(size.w, 320), 480), h: Math.min(Math.max(size.h, 220), 360) }, themeSource: this,
+            ...(this.requestPip ? { request: this.requestPip } : {}),
+            dockLabel: this.#personal.has(id) ? 'Acoplar ao workspace' : 'Reacoplar ao workspace',
+            onHide: this.#personal.has(id) ? () => this.hidePersonal(id) : null,
+            onDock: () => this.dock(id),
+            onClosed: () => { if (this.#detached.get(id)?.popout === popout) { if (this.#personal.has(id)) this.hidePersonal(id); else this.dock(id); } },
+        });
+        if (!popout) {
+            this.#notice('O navegador não abriu a janela Picture-in-Picture. Clique no botão de novo (precisa de um clique seu).');
+            if (!current && !this.#detached.has(id)) this.float(id);
+            return false;
+        }
+        this.#adopt(id, { kind: 'window', pip: true, popout, body: popout.body });
         this.#announce(id);
         return true;
     }

@@ -5,6 +5,7 @@ Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions 
 ## Unreleased (phone UX)
 
 ### Added
+- **Picture-in-Picture** (Chrome/Edge, Document PiP API): "Fixar por cima de tudo (PiP)" no menu da janela move o componente vivo para uma janelinha sempre por cima (uma por vez; precisa de clique). Durante uma chamada, sair da aba abre a chamada em PiP sozinha (Media Session `enterpictureinpicture`, como o Google Meet) e voltar à aba restaura. Navegadores sem a API não veem o item.
 - Janelas flutuantes redimensionam pelos 4 cantos e pelas 4 laterais (antes só o canto inferior direito); o lado oposto fica parado. Uma janela flutuante nova nasce inteira dentro do workspace (antes a borda de baixo podia ficar fora da tela, sem como pegar).
 - **Components answer to the width of their own box** (R-ADAPT-1..3): the host of every `AgoraComponent` is a container (`container-type: inline-size`) and exposes `data-box` (`compact` < 420 px, `regular`, `wide` ≥ 720 px; `core/components/box.js`). Each catalog component has `@container` rules and `@media (pointer: coarse)` touch targets (44 px, 16 px inputs).
 - **Compact presentation of the workspace** (R-LAY-13..15): below 720 px of its own width the workspace shows ONE window at a time (the layout flattened in reading order, `flattenTree`) with a bottom bar and a sheet listing every window (rename, close, add). The same live elements are moved, never recreated, and all stay mounted. A hidden window that receives a value from a connection gets a dot (`Bus.onDelivery`). The document is untouched.

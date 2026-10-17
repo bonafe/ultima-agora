@@ -19,6 +19,26 @@ export function openPopout({ title, rect, themeSource, onDock, onClosed, onHide 
     doc.open();
     doc.write(`<!doctype html><html lang="${document.documentElement.lang || 'pt-BR'}"><head><meta charset="utf-8"><base href="${document.baseURI}"></head><body></body></html>`);
     doc.close();
+    return furnish(win, { title, themeSource, onDock, onClosed, onHide, dockLabel });
+}
+
+//Document Picture-in-Picture (Chrome/Edge): a small always-on-top window, like Google Meet's when you switch tabs.
+//Same idea as the pop-out (the live element is moved in; the code keeps running here) but the browser owns the window:
+//no position, no address bar, ONE at a time, and opening needs a user gesture (or the browser's own trigger, see the
+//call's `enterpictureinpicture` handler). Returns null when unsupported or refused.
+export const pipSupported = (target = window) => 'documentPictureInPicture' in target;
+
+export async function openPip({ title, rect, themeSource, onDock, onClosed, onHide = null, dockLabel = 'Reacoplar ao workspace', request = options => window.documentPictureInPicture.requestWindow(options) }) {
+    let win;
+    try { win = await request({ width: Math.round(rect.w), height: Math.round(rect.h) }); } catch { return null; }
+    if (!win) return null;
+    win.document.title = title;
+    return furnish(win, { title, themeSource, onDock, onClosed, onHide, dockLabel });
+}
+
+//Dresses an empty window: theme, a bar with the way back, a body for the component; watches it closing.
+function furnish(win, { title, themeSource, onDock, onClosed, onHide, dockLabel }) {
+    const doc = win.document;
     doc.title = title;
 
     const computed = getComputedStyle(themeSource);

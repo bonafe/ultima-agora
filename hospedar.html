@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR" class="doc">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rodar a sua Ágora · Ultima</title>
+    <meta name="description" content="Como rodar a sua própria Ágora Digital em casa ou na empresa, para você e seus amigos, sem programar.">
+    <meta name="theme-color" content="#0a0b1e">
+    <link rel="stylesheet" href="site/landing.css">
+</head>
+<body>
+    <a class="skip" href="#conteudo">Ir para o conteúdo</a>
+    <canvas id="art" aria-hidden="true"></canvas>
+    <header class="top solid">
+        <a class="brand" href="./">Ágora Digital<small>Ultima</small></a>
+        <nav aria-label="Principal"><a href="./">Início</a><a class="button" href="app.html">Entrar na Ágora</a></nav>
+    </header>
+
+    <main id="conteudo">
+        <div class="card">
+            <p class="kicker">Hospedagem</p>
+            <h1>Rodar a sua Ágora</h1>
+            <p class="lead">Você não precisa programar. Precisa instalar um programa, copiar três comandos e passar um link para os seus amigos.</p>
+        </div>
+
+        <div class="card">
+            <h2>Antes de começar</h2>
+            <p>O que a sua Ágora vai usar:</p>
+            <ul class="list">
+                <li><span class="tag now">1</span><span>Um computador que fique ligado enquanto vocês usam (pode ser o seu).</span></li>
+                <li><span class="tag now">2</span><span><b>Docker Desktop</b>, gratuito para uso pessoal, em <a href="https://www.docker.com/products/docker-desktop/">docker.com</a>. No Linux, o Docker comum com o plugin Compose.</span></li>
+                <li><span class="tag now">3</span><span>O <b>código da Ágora</b>: na <a href="https://github.com/bonafe/ultima-agora">página do projeto</a>, botão verde <i>Code</i> → <i>Download ZIP</i>, e descompacte.</span></li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Para usar sozinho, neste computador</h2>
+            <p>Abra um terminal dentro da pasta descompactada e rode:</p>
+            <pre><code>docker compose up -d --build</code></pre>
+            <p>Espere terminar (na primeira vez demora uns minutos) e abra <code>http://localhost:8080/app.html</code> no navegador. Para parar: <code>docker compose down</code>.</p>
+        </div>
+
+        <div class="card">
+            <h2>Para chamar outras pessoas</h2>
+            <p>Descubra o endereço do seu computador na rede (algo como <code>192.168.2.155</code>) e rode, trocando pelo seu:</p>
+            <pre><code>AGORA_HOSTS=192.168.2.155 docker compose up -d --build</code></pre>
+            <p>Depois abra no navegador (e mande para os outros) este endereço, trocando o número e o seu nome:</p>
+            <pre><code>https://192.168.2.155:8443/app.html?sync=https://192.168.2.155:8443/sync&amp;name=Maria</code></pre>
+            <p>Quem entrar no mesmo espaço pelo link do espaço (o que termina em <code>#/workspace/…</code>) aparece ali, com presença, chat e chamada.</p>
+            <p class="note">Na primeira vez o navegador avisa que a conexão não é confiável. É porque o certificado foi criado por você, e não por uma empresa. Escolha “Avançado” e “continuar”. Isso é preciso para a câmera e o microfone funcionarem.</p>
+        </div>
+
+        <div class="card">
+            <h2>Transcrição da fala</h2>
+            <p>A transcrição roda no navegador de cada pessoa e precisa de um modelo de voz (cerca de 80 MB), baixado uma vez. Com o Python instalado, na pasta do projeto:</p>
+            <pre><code>python3 tools/baixar_modelo_whisper.py</code></pre>
+        </div>
+
+        <div class="card">
+            <h2>Cuidados</h2>
+            <ul class="list">
+                <li><span class="tag soon">atenção</span><span>Esta forma de rodar <b>não pede senha</b>: qualquer pessoa que alcance o endereço entra e escolhe o seu papel. Use em rede de confiança (a sua casa, a sua equipe), nunca aberta na internet.</span></li>
+                <li><span class="tag soon">atenção</span><span>Para grupos pequenos (até uns 4 a 6 na chamada). Entre redes diferentes, a chamada pode precisar de um servidor de apoio (TURN).</span></li>
+                <li><span class="tag now">dica</span><span>Os dados ficam no seu computador, no volume <code>agora-data</code> do Docker.</span></li>
+            </ul>
+            <p style="margin-top:1rem">Quer instalar de verdade, para a internet toda? Veja o <a href="https://github.com/bonafe/ultima-agora/blob/main/server/agora-sync/README.md">guia técnico do servidor</a>.</p>
+        </div>
+    </main>
+    <footer><p><a href="./">← Voltar ao início</a></p></footer>
+    <script type="module">
+        //A quieter sky for the guide: the same art, held still at dusk
+        import { AgoraArt } from './site/art.js';
+        const art = new AgoraArt(document.getElementById('art'), { still: true });
+        art.setProgress(0.22);
+        addEventListener('resize', () => { art.resize(); art.setProgress(0.22); });
+    </script>
+</body>
+</html>

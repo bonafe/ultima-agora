@@ -2,6 +2,17 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (site — Ágora Digital)
+
+### Added
+- **Landing page** (`index.html`, `site/`): the story of the Ágora in six acts over a canvas background that is a function of the scroll (dusk square with columns → people meet → voices ripple → machines join as a graph → floating panels → dawn). The visitor's pointer is a person too. Honours `prefers-reduced-motion` (still picture, changes only with the scroll), works at phone width and offline.
+- `hospedar.html`: hosting guide for people who will not program (Docker in plain words, sharing the link, the self-signed certificate, the Whisper model, cautions).
+- Static only, so it can be published on GitHub Pages; tags "já existe" / "a caminho" keep the page from promising what is not built.
+
+### Changed
+- The workspace application moved from `/` to **`/app.html`** (relative module paths unchanged): links with `?sync=` now start with `app.html`. `/` is the landing page. The precache lists both pages and `site/`.
+- Test: the links of both pages are served and the art draws at every point of the story.
+
 ## Unreleased (transcription — Whisper in the browser)
 
 ### Added

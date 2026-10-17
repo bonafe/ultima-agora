@@ -15,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-PASTAS = ["core", "collaboration", "conference", "transcription", "components", "ui", "vendor", "adapters"]
+PASTAS = ["core", "collaboration", "conference", "transcription", "components", "ui", "vendor", "adapters", "site"]
 EXTENSOES = {".js", ".mjs", ".html", ".css", ".json", ".svg", ".png", ".ico", ".woff2"}
 EXCLUIR = {"README.md", "ORIGEM.txt", "precache.json"}
 PASTAS_EXCLUIDAS = {"node_modules", "tests"}
@@ -31,7 +31,7 @@ def listar(raiz: Path, pastas, extras=()):
     return sorted(set(arquivos))
 
 
-def gerar(raiz: Path, pastas=PASTAS, extras=("index.html",), prefixo="", pagina_raiz=True) -> dict:
+def gerar(raiz: Path, pastas=PASTAS, extras=("index.html", "app.html", "hospedar.html"), prefixo="", pagina_raiz=True) -> dict:
     arquivos = listar(raiz, pastas, extras)
     resumo = hashlib.sha256()
     for arquivo in arquivos:
@@ -50,7 +50,7 @@ def main():
     ap.add_argument("--prefixo", default="")
     ap.add_argument("--sem-pagina-raiz", action="store_true", help="hospedeiro cuja página inicial não é um arquivo estático (ex.: Django)")
     ap.add_argument("--pastas", nargs="*", default=PASTAS)
-    ap.add_argument("--extras", nargs="*", default=["index.html"])
+    ap.add_argument("--extras", nargs="*", default=["index.html", "app.html", "hospedar.html"])
     args = ap.parse_args()
     raiz = Path(args.raiz)
     saida = Path(args.saida) if args.saida else raiz / "precache.json"

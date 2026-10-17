@@ -3,39 +3,127 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ultima Agora</title>
-    <style>html, body { height: 100%; margin: 0; } agora-shell { display: flex; height: 100%; }</style>
+    <title>Ultima: Ágora Digital</title>
+    <meta name="description" content="A Ágora Digital é o lugar onde pessoas e máquinas se encontram para conversar, pensar e decidir juntas. Um espaço de trabalho compartilhado, que você monta com as peças que quiser.">
+    <meta name="theme-color" content="#0a0b1e">
+    <meta property="og:title" content="Ultima: Ágora Digital">
+    <meta property="og:description" content="Um lugar de encontro e conversa, onde pessoas e máquinas pensam juntas.">
+    <link rel="stylesheet" href="site/landing.css">
 </head>
 <body>
-    <agora-shell></agora-shell>
-    <div id="fatal" role="alert" hidden style="font: 14px system-ui; padding: 1rem; background: #fde8e6; color: #7a1c12; border-bottom: 2px solid #c0392b;"></div>
-    <script type="module">
-        //Whatever goes wrong while starting must be visible on the page, not only in the Console
-        const fatal = message => { const box = document.getElementById('fatal'); box.hidden = false; box.textContent = `Erro ao iniciar o Ultima Agora: ${message} (detalhes no Console, F12)`; };
-        addEventListener('unhandledrejection', event => fatal(event.reason?.message ?? event.reason));
-        addEventListener('error', event => fatal(event.message));
+    <a class="skip" href="#conteudo">Ir para o conteúdo</a>
+    <canvas id="art" aria-hidden="true"></canvas>
+    <div id="progress" aria-hidden="true"></div>
 
-        //Offline-first: after the first visit the app itself (not only the data) opens without a network
-        addEventListener('load', () => import('./core/offline/register_sw.js').then(m => m.registerOfflineShell()));
+    <header class="top">
+        <a class="brand" href="./">Ágora Digital<small>Ultima</small></a>
+        <nav aria-label="Principal">
+            <a href="#como">Como usar</a>
+            <a href="hospedar.html">Rodar em casa</a>
+            <a href="#portas">Documentação</a>
+            <a class="button" href="app.html">Entrar na Ágora</a>
+        </nav>
+    </header>
 
-        try {
-            const { ComponentRegistry } = await import('./core/registry/component_registry.js');
-            const { registerCoreComponents } = await import('./components/catalog.js');
-            const { DevHost } = await import('./adapters/dev/dev_host.js');
-            await import('./ui/shell/agora-shell.js');
+    <main id="conteudo">
+        <section class="chapter hero" aria-labelledby="titulo">
+            <p class="kicker reveal">Ultima</p>
+            <h1 id="titulo" class="reveal">Ágora <em>Digital</em></h1>
+            <p class="lead reveal late">O lugar onde pessoas e máquinas se encontram para conversar, pensar e decidir juntas.</p>
+            <div class="actions reveal late">
+                <a class="button" href="app.html">Entrar na Ágora</a>
+                <a class="button ghost" href="#praca">Conhecer a ideia</a>
+            </div>
+            <div class="scrollhint" aria-hidden="true">role para descer</div>
+        </section>
 
-            const registry = new ComponentRegistry();
-            await registerCoreComponents(registry);
-            //Optional realtime: open with ?sync=http://localhost:8787 (the dev agora-sync server). Also: &name=Maria &role=viewer
-            const params = new URLSearchParams(location.search);
-            const syncHttp = params.get('sync');
-            const sync = syncHttp ? { http: syncHttp, url: syncHttp.replace(/^http/, 'ws') } : null;
-            const host = await DevHost.create({ sync, role: params.get('role'), name: params.get('name') });
-            await document.querySelector('agora-shell').init({ host, registry });
-        } catch (error) {
-            console.error(error);
-            fatal(error.message);
-        }
-    </script>
+        <section class="chapter" id="praca" aria-labelledby="t-praca">
+            <div class="card reveal">
+                <p class="kicker">I · A praça</p>
+                <h2 id="t-praca">Antes de tudo, havia uma praça</h2>
+                <p>Na Grécia antiga, a <strong>ágora</strong> era o coração da cidade. Não era um prédio nem uma instituição: era um espaço aberto onde as pessoas iam se encontrar, trocar notícias, discordar, resolver coisas juntas.</p>
+                <p>Ninguém chegava sabendo tudo. A praça existia para que o que cada um sabia pudesse se juntar ao que os outros sabiam.</p>
+            </div>
+        </section>
+
+        <section class="chapter right" aria-labelledby="t-hoje">
+            <div class="card reveal">
+                <p class="kicker">II · Hoje</p>
+                <h2 id="t-hoje">A praça agora cabe na tela</h2>
+                <p>Cada pessoa está num lugar, mas pode estar no mesmo espaço. Uma chamada de vídeo e voz, um chat, um bloco de notas que várias pessoas escrevem ao mesmo tempo, tudo aberto lado a lado.</p>
+                <p>Você vê quem chegou, quem está falando, em que parte do espaço cada um está olhando. Dá para sentir a presença dos outros, como numa praça de verdade.</p>
+                <p><span class="who"><span class="dot"></span> pessoas</span></p>
+            </div>
+        </section>
+
+        <section class="chapter" aria-labelledby="t-maquinas">
+            <div class="card reveal">
+                <p class="kicker">III · As máquinas também vêm</p>
+                <h2 id="t-maquinas">Máquinas na conversa, à vista de todos</h2>
+                <p>Hoje a inteligência artificial também frequenta a praça. Mas aqui ela não decide sozinha, nem trabalha escondida: ela participa onde todo mundo vê. Propõe, e as pessoas aceitam ou não.</p>
+                <p><span class="who"><span class="dot"></span> pessoas</span><span class="who"><span class="dot machine"></span> máquinas</span></p>
+                <ul class="list">
+                    <li><span class="tag now">já existe</span><span><b>Transcreve</b> a fala de cada pessoa na chamada, no próprio computador dela: o áudio não sai de lá.</span></li>
+                    <li><span class="tag soon">a caminho</span><span><b>Encontra afirmações</b> no que foi dito e mostra de onde cada uma veio.</span></li>
+                    <li><span class="tag soon">a caminho</span><span><b>Extrai entidades</b> (pessoas, lugares, organizações) e <b>desenha grafos</b> das ligações entre elas.</span></li>
+                    <li><span class="tag now">já existe</span><span><b>Tudo compartilhado</b>: o que aparece para você aparece para todos, no mesmo espaço.</span></li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="chapter right" aria-labelledby="t-espaco">
+            <div class="card reveal">
+                <p class="kicker">IV · O espaço é seu</p>
+                <h2 id="t-espaco">Você monta a sua praça</h2>
+                <p>Um espaço de trabalho é feito de <strong>peças</strong>: notas, tabelas, grafos, chat, chamada. Você escolhe as que quer, arruma como preferir e <strong>liga uma na outra</strong>. Uma tabela vira um grafo com um clique.</p>
+                <p>O espaço fica guardado. Você volta amanhã e está tudo lá, e funciona até sem internet.</p>
+                <ul class="list">
+                    <li><span class="tag now">já existe</span><span>Abas, divisões e painéis lado a lado.</span></li>
+                    <li><span class="tag soon">a caminho</span><span><b>Painéis flutuantes</b>, soltos sobre o espaço.</span></li>
+                    <li><span class="tag soon">a caminho</span><span><b>Várias janelas e vários aparelhos</b>: o celular como câmera e microfone, o notebook com o grafo, a TV com a sala. Cada aparelho tem o seu papel no mesmo espaço.</span></li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="chapter center" id="como" aria-labelledby="t-como">
+            <div class="card wide reveal">
+                <p class="kicker">V · Como usar</p>
+                <h2 id="t-como">Três passos, sem instalar nada</h2>
+                <div class="steps">
+                    <div class="step"><h3>Entre</h3><p>Clique em “Entrar na Ágora”. Um espaço seu é criado no seu navegador, na hora.</p></div>
+                    <div class="step"><h3>Monte</h3><p>Abra a paleta e escolha as peças. Arraste para onde quiser e ligue umas às outras.</p></div>
+                    <div class="step"><h3>Convide</h3><p>Compartilhe o link. Quem entrar aparece ali, com vídeo, voz, chat e as mesmas peças à frente.</p></div>
+                </div>
+                <div class="actions" style="margin-top:1.6rem"><a class="button" href="app.html">Começar agora</a></div>
+            </div>
+        </section>
+
+        <section class="chapter center" id="portas" aria-labelledby="t-portas">
+            <div class="card wide reveal">
+                <p class="kicker">VI · Para onde ir</p>
+                <h2 id="t-portas">Escolha uma porta</h2>
+                <div class="doors">
+                    <a class="door" href="app.html"><span class="glyph" aria-hidden="true">🏛️</span><strong>Entrar na Ágora</strong><span>Abra o espaço de trabalho agora e experimente sozinho.</span></a>
+                    <a class="door" href="hospedar.html"><span class="glyph" aria-hidden="true">🏠</span><strong>Rodar em casa</strong><span>Sua própria Ágora para você e seus amigos. Sem programar: só instalar e rodar.</span></a>
+                    <a class="door" href="https://github.com/bonafe/ultima-agora/tree/main/docs/especificacao"><span class="glyph" aria-hidden="true">📜</span><strong>Especificação</strong><span>As ideias, os princípios e as decisões do projeto, em português.</span></a>
+                    <a class="door" href="https://github.com/bonafe/ultima-agora/blob/main/docs/contrato-agoracomponent.md"><span class="glyph" aria-hidden="true">🧩</span><strong>Criar peças</strong><span>Documentação técnica para quem quer construir componentes novos.</span></a>
+                    <a class="door" href="https://github.com/bonafe/ultima-agora"><span class="glyph" aria-hidden="true">🌱</span><strong>Código aberto</strong><span>O projeto inteiro, com histórico e testes.</span></a>
+                </div>
+            </div>
+        </section>
+
+        <section class="chapter center" aria-label="Convite final">
+            <div class="reveal">
+                <p class="verse">A praça está aberta.<br>Falta só você chegar.</p>
+                <div class="actions" style="margin-top:2rem"><a class="button" href="app.html">Entrar na Ágora</a></div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Ultima: Ágora Digital · feito sobre o <a href="https://github.com/bonafe/ultimajs">UltimaJS</a> · sem rastreadores, sem anúncios</p>
+    </footer>
+
+    <script type="module" src="site/landing.js"></script>
 </body>
 </html>

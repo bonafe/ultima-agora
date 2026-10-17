@@ -31,7 +31,7 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 - `core/workspace/` — `layout.js` (docking tree in the document) and `workspace.js` (the only way to mutate the composition).
 - `adapters/dev/` — `DevHost`, the development host (local, or synced with `?sync=`).
 - `components/` — generic catalog (`ultima-text`, `ultima-notes`, markdown renderer). `ui/` — shell, palette, workspace view, inspector.
-- Run the app: serve the root and open `/` (hash route `#/workspace/<id>`).
+- Run the app: serve the root and open `/app.html` (hash route `#/workspace/<id>`); `/` is the landing page (`index.html`, `hospedar.html`, `site/` — static, GitHub Pages, D-38).
 - `tests/` — zero-dependency browser tests, same runner shape as UltimaJS.
 - `conference/` — `ConferenceProvider`/`ConferenceRoom` contract and `mesh/` (`MeshProvider`: browser-native WebRTC in a full mesh, signalling relayed by `agora-sync`, D-36). Only providers touch `RTCPeerConnection`.
 - `transcription/` — `Transcriber` (the person's switch) and `whisper/` (`WhisperProvider`, worker, audio worklet, `speech.js`): Whisper runs IN the browser (D-37); `vendor/whisper/` is the runtime, `models/` the weights (outside git: `tools/baixar_modelo_whisper.py`). Only `transcription/whisper/` imports `vendor/whisper`.

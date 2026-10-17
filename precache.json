@@ -1,8 +1,9 @@
 {
- "version": "63f161b85c5bf5b2",
+ "version": "cfaa6c4d5a25ce32",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
+  "app.html",
   "collaboration/document/memory_state_store.js",
   "collaboration/document/yjs_state_store.js",
   "collaboration/presence/presence.js",
@@ -54,7 +55,11 @@
   "core/registry/manifest.js",
   "core/workspace/layout.js",
   "core/workspace/workspace.js",
+  "hospedar.html",
   "index.html",
+  "site/art.js",
+  "site/landing.css",
+  "site/landing.js",
   "transcription/transcriber.js",
   "transcription/whisper/pcm_worklet.js",
   "transcription/whisper/speech.js",

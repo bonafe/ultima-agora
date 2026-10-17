@@ -1554,6 +1554,28 @@ test('precache: every file in the list is served, and every component the regist
     assert(!list.files.some(f => f.startsWith('tests/') || f.startsWith('server/') || f.startsWith('docs/')), 'tests, server and docs do not belong in the app cache');
 });
 
+test('site: every local link of the landing and the hosting guide is served; the art draws at any point of the story', async () => {
+    for (const page of ['../index.html', '../hospedar.html']) {
+        const html = new DOMParser().parseFromString(await (await fetch(page)).text(), 'text/html');
+        assert(html.title && html.querySelector('main') && html.querySelector('a[href="app.html"]'), `${page}: title, main and the way into the app`);
+        for (const el of html.querySelectorAll('a[href], link[href], script[src]')) {
+            const ref = el.getAttribute('href') ?? el.getAttribute('src');
+            if (/^(https?:|#|mailto:)/.test(ref)) continue;
+            assert((await fetch(`../${ref.split('#')[0] || './'}`, { method: 'HEAD' })).ok, `${page}: ${ref} is not served`);
+        }
+    }
+    const { AgoraArt } = await import('../site/art.js');
+    const canvas = document.createElement('canvas');
+    const art = new AgoraArt(canvas, { still: true });
+    const seen = new Set();
+    for (const p of [0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1, 2, -1]) {                // out-of-range values are clamped, never throw
+        art.setProgress(p);
+        const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        seen.add(`${data[0]},${data[1]},${data[2]}`);
+    }
+    assert(art.progress === 0 && seen.size >= 5, 'the sky changes along the story');
+});
+
 test('offline shell: the cache version goes in the registration URL, and offline nothing is replaced', async () => {
     const registered = [];
     const fake = { register: async url => { registered.push(url); return { fake: true }; }, getRegistration: async () => ({ existing: true }) };

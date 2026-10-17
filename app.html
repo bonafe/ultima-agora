@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ultima: Ágora Digital · Espaço de trabalho</title>
+    <style>html, body { height: 100%; margin: 0; } agora-shell { display: flex; height: 100%; }</style>
+</head>
+<body>
+    <agora-shell></agora-shell>
+    <div id="fatal" role="alert" hidden style="font: 14px system-ui; padding: 1rem; background: #fde8e6; color: #7a1c12; border-bottom: 2px solid #c0392b;"></div>
+    <script type="module">
+        //Whatever goes wrong while starting must be visible on the page, not only in the Console
+        const fatal = message => { const box = document.getElementById('fatal'); box.hidden = false; box.textContent = `Erro ao iniciar o Ultima Agora: ${message} (detalhes no Console, F12)`; };
+        addEventListener('unhandledrejection', event => fatal(event.reason?.message ?? event.reason));
+        addEventListener('error', event => fatal(event.message));
+
+        //Offline-first: after the first visit the app itself (not only the data) opens without a network
+        addEventListener('load', () => import('./core/offline/register_sw.js').then(m => m.registerOfflineShell()));
+
+        try {
+            const { ComponentRegistry } = await import('./core/registry/component_registry.js');
+            const { registerCoreComponents } = await import('./components/catalog.js');
+            const { DevHost } = await import('./adapters/dev/dev_host.js');
+            await import('./ui/shell/agora-shell.js');
+
+            const registry = new ComponentRegistry();
+            await registerCoreComponents(registry);
+            //Optional realtime: open with ?sync=http://localhost:8787 (the dev agora-sync server). Also: &name=Maria &role=viewer
+            const params = new URLSearchParams(location.search);
+            const syncHttp = params.get('sync');
+            const sync = syncHttp ? { http: syncHttp, url: syncHttp.replace(/^http/, 'ws') } : null;
+            const host = await DevHost.create({ sync, role: params.get('role'), name: params.get('name') });
+            await document.querySelector('agora-shell').init({ host, registry });
+        } catch (error) {
+            console.error(error);
+            fatal(error.message);
+        }
+    </script>
+</body>
+</html>

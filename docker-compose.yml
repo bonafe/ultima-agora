@@ -1,5 +1,5 @@
 # Dev/demo stack: the app and a reverse proxy (nginx) + the realtime server.
-#   http://localhost:8080/    and    https://<host>:8443/    (same site; https is required for camera and microphone
+#   http://localhost:8080/app.html    and    https://<host>:8443/app.html    (same site; https is required for camera and microphone
 #   on other machines). The proxy serves the realtime server at /sync/, so open the app with
 #       ?sync=https://<host>:8443/sync        (or ?sync=http://localhost:8080/sync on this machine)
 # Set AGORA_HOSTS to the IP/name other machines use (it goes into the certificate), e.g.

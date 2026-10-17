@@ -20,4 +20,11 @@
         <button id="cam" type="button" aria-pressed="false">Câmera</button>
         <button id="leave" type="button">Sair</button>
     </div>
+    <div id="transcription" role="group" aria-label="Transcrição" hidden>
+        <button id="transcribe" type="button" aria-pressed="false">Transcrever minha fala</button>
+        <label class="sr-only" for="language">Idioma da transcrição</label>
+        <select id="language"></select>
+        <button id="open-transcript" type="button">Abrir transcrição</button>
+        <p id="t-status" role="status" aria-live="polite"></p>
+    </div>
 </section>

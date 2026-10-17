@@ -56,11 +56,24 @@ O componente `<ultima-conference>` usa um `ConferenceProvider` injetado. Impleme
 ### Privacidade
 
 - Entrar numa conferência pede confirmação explícita para ativar microfone e câmera (nunca ligam sozinhos).
+- A transcrição (6.2.1) é uma escolha **de cada pessoa sobre a própria fala**, nunca ligada por outra pessoa nem pelo sistema, e todos veem quem está sendo transcrito.
 - Gravação **fora do MVP**. Se for adotada, exige consentimento visível e é tratada como dado classificado (herda a classificação do workspace).
+
+### 6.2.1 Transcrição da chamada (D-37)
+
+Cada pessoa é transcrita **no próprio dispositivo**, por um modelo de reconhecimento de fala que roda no navegador (Whisper, em WebAssembly, num *worker*). O áudio nunca sai do dispositivo; só o **texto** vai para o workspace. Isso dá a autoria de cada trecho sem separar vozes, funciona sem internet e não depende de terceiros (R-CONF-6).
+
+- **R-TRANS-1.** Nada liga sozinho: a pessoa escolhe "Transcrever minha fala" depois de entrar na chamada. A transcrição acompanha o microfone (microfone desligado → espera) e termina ao sair da chamada. Quem só pode ler (*viewer*) não é transcrito.
+- **R-TRANS-2.** O estado "sendo transcrito" vai na presença (junto do estado de mídia, R-CONF-3) e a interface o mostra no tile de quem está sendo transcrito.
+- **R-TRANS-3.** Contrato `TranscriptionProvider` (`start(trilha, { idioma }) → sessão`, com `onSegment({ texto, início, duração })`); a implementação inicial é `WhisperProvider`. Whisper não faz *streaming*: a fala é cortada em enunciados por detecção de voz (pausa de 700 ms, no máximo 25 s) e cada um é transcrito ao terminar; a legenda aparece alguns segundos depois da pausa. Saídas que o Whisper inventa no silêncio ("Obrigado por assistir", `[Música]`, laços de repetição) são descartadas.
+- **R-TRANS-4.** O texto vai para um **registro de transcrição do workspace** no `agora-sync`, **fora do documento** (como o chat, R-CHAT-2): autor tirado do token (ninguém põe palavras na boca de outra pessoa), idempotente por `clientId`, histórico para quem chega depois, retenção configurável (`TRANSCRIPT_RETENTION_DAYS`). Herda a classificação do workspace (R-CLS-2).
+- **R-TRANS-5.** Interface: legenda ao vivo no tile de quem fala e o componente `ultima-transcript` (lista por pessoa, busca, copiar, baixar `.txt`).
+- **R-TRANS-6.** O modelo (dezenas de MB) é servido pela **própria origem** (`models/`, fora do git; `tools/baixar_modelo_whisper.py`) e guardado no cache do navegador; sem o modelo instalado a interface diz isso claramente. Tamanhos: `tiny`, `base` (padrão), `small`. Idiomas: pt (padrão), en, es, detecção automática.
+- **R-TRANS-7.** Execução só em CPU (WASM); com isolamento de origem cruzada (cabeçalhos COOP/COEP, já no `docker-compose.yml`) usa vários *threads* e fica cerca de 2× mais rápido.
 
 ## 6.3 Voz como interface (alinhamento com a ADR 004 do Inteligência Aberta)
 
-O Inteligência Aberta trata voz como cidadã de primeira classe. O Agora não implementa STT/TTS, mas **não pode ser um obstáculo**:
+O Inteligência Aberta trata voz como cidadã de primeira classe. O Agora hospeda o contrato de transcrição da chamada (6.2.1), mas não implementa o motor (Whisper é de terceiros, vendorizado) nem TTS, e **não pode ser um obstáculo**:
 
 - **R-VOICE-1.** Toda ação disponível por UI deve estar disponível de forma programática (via `actions` e ferramentas de agente, 08), o que permite uma interface de voz acionar o Agora pelo agente.
 - **R-VOICE-2.** O shell e os componentes do núcleo devem ser operáveis por teclado e leitores de tela (7.8). Isso é pré-requisito para voz e acessibilidade.

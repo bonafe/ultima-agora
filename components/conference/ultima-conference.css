@@ -27,3 +27,10 @@ button[aria-pressed="true"] { background: var(--agora-accent, #2a6df4); color: #
 #leave { margin-left: auto; border-color: #d9381e; }
 :disabled { opacity: .5; cursor: default; }
 :focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: 1px; }
+#transcription { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding: 0 .5rem .5rem; }
+#transcription select { font: inherit; padding: .3rem .4rem; border: 1px solid var(--agora-border, #ccc); border-radius: .3rem; background: transparent; color: inherit; }
+#t-status { flex-basis: 100%; margin: 0; font-size: .78rem; opacity: .8; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.caption { position: absolute; left: 0; right: 0; bottom: 1.35rem; padding: .15rem .4rem; font-size: .76rem; line-height: 1.25; color: #fff; background: rgba(0, 0, 0, .62); max-height: 3.4em; overflow: hidden; }
+.caption:empty { display: none; }
+.label .rec { opacity: .95; }

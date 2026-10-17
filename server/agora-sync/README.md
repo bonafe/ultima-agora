@@ -23,6 +23,7 @@ Com `AGORA_DEV_AUTH=1` o servidor emite tokens para qualquer um (`POST /dev/toke
 | `AGORA_SYNC_SECRET` | segredo HS256 (≥ 32 caracteres) compartilhado com o host que emite os tokens; obrigatório |
 | `PORT` / `BIND_ADDR` | padrão `8787` / `127.0.0.1` (a imagem Docker usa `0.0.0.0`) |
 | `AGORA_ICE_SERVERS` | (opcional) lista JSON de `RTCIceServer` (STUN/TURN) anunciada aos clientes para a chamada de áudio/vídeo |
+| `TRANSCRIPT_RETENTION_DAYS` | dias de guarda do registro de transcrição das chamadas (0 = para sempre) |
 | `DATA_DIR` | onde ficam os documentos (um `.bin` por workspace, gravação atômica) |
 
 O host (Django) emite tokens curtos com as claims `sub`, `name`, `workspace`, `role`, `exp`. Sem
@@ -35,6 +36,7 @@ O host (Django) emite tokens curtos com as claims `sub`, `name`, `workspace`, `r
   autoral (`content`); `owner`/`editor` tudo. Uma escrita proibida fecha a conexão (4403) e **não** entra no
   documento. A mudança de papel vale para conexões abertas (`setRole`).
 - **Chamada (D-36):** repassa a sinalização WebRTC (mensagem tipo 5) entre duas pessoas do mesmo workspace, com o remetente tirado da conexão e limites de tamanho e taxa. Não vê nem transporta mídia, e por isso **não impede** que um `viewer` envie áudio/vídeo.
+- **Transcrição da chamada (D-37):** registro por workspace (mensagem tipo 6), separado do chat e fora do documento: autor tirado do token, idempotente por `clientId`, histórico, persistência (`<id>.transcript.jsonl`), limite de taxa. O texto é produzido no dispositivo de cada pessoa; o servidor não recebe áudio.
 - **Limites:** mensagens acima de `maxMessageBytes` (2 MB) são recusadas.
 - **Persistência:** o documento sobrevive a reinício; falha de disco é registrada, não derruba a sessão.
 

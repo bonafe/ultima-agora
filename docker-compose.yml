@@ -4,6 +4,7 @@
 #       ?sync=https://<host>:8443/sync        (or ?sync=http://localhost:8080/sync on this machine)
 # Set AGORA_HOSTS to the IP/name other machines use (it goes into the certificate), e.g.
 #       AGORA_HOSTS=192.168.2.155 docker compose up -d --build
+# Transcription (Whisper in the browser) needs the model in ./models (outside git): tools/baixar_modelo_whisper.py
 # DEV AUTH is on: anyone who can reach the server gets a token. Use on a trusted network only.
 # Production: see server/agora-sync/README.md.
 services:
@@ -24,6 +25,8 @@ services:
       # Optional STUN/TURN for calls between different networks, e.g.
       #   AGORA_ICE_SERVERS: '[{"urls":"turn:turn.example:3478","username":"u","credential":"c"}]'
       AGORA_ICE_SERVERS: ${AGORA_ICE_SERVERS:-}
+      # Days to keep the call transcript (0 = forever)
+      TRANSCRIPT_RETENTION_DAYS: ${TRANSCRIPT_RETENTION_DAYS:-0}
     volumes:
       - agora-data:/data
     restart: unless-stopped

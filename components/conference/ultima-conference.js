@@ -1,5 +1,12 @@
 import { AgoraComponent } from '../../core/components/agora_component.js';
 import { h } from '../../ui/dom.js';
+import { LANGUAGES } from '../../transcription/transcriber.js';
+
+const T_STATUS = {
+    waiting: 'Ligue o microfone para ser transcrito.',
+    listening: 'Transcrevendo a sua fala (no seu dispositivo; só o texto vai para o workspace).',
+    transcribing: 'Transcrevendo…',
+};
 
 //Audio and video with the people of the workspace. Needs only `this.conference` (a ConferenceRoom): it works as a tab
 //in the workspace or as the shell's tray. Nothing here turns a device on by itself: the person ticks what to turn on.
@@ -24,8 +31,17 @@ export default class UltimaConference extends AgoraComponent {
         root.querySelector('#leave').addEventListener('click', () => { room.leave(); this.#errors = []; });
         this.#stop = room.on('change', () => this.#paint());
         const stopError = room.on('error', error => this.#fail(error));
-        const stopChange = this.#stop;
-        this.#stop = () => { stopChange(); stopError(); };
+        const stops = [this.#stop, stopError];
+        const transcriber = this.transcriber, transcript = this.transcript;
+        if (transcriber) {
+            root.querySelector('#transcribe').addEventListener('click', () => this.#toggleTranscription());
+            root.querySelector('#language').addEventListener('change', event => transcriber.setLanguage(event.target.value));
+            root.querySelector('#language').replaceChildren(...Object.entries(LANGUAGES).map(([code, name]) => h('option', { value: code }, name)));
+            root.querySelector('#open-transcript').addEventListener('click', () => this.dispatchEvent(new CustomEvent('palette-add', { bubbles: true, composed: true, detail: { type: 'ultima-transcript' } })));
+            stops.push(transcriber.onChange(() => this.#paint()));
+        }
+        if (transcript) stops.push(transcript.onChange(() => this.#paint()));
+        this.#stop = () => stops.forEach(stop => stop());
         this.#paint();
     }
 
@@ -53,6 +69,12 @@ export default class UltimaConference extends AgoraComponent {
             this.#errors = errors.map(e => e.message);
         } catch (error) { this.#errors = [error.message]; }
         root.querySelector('#enter').disabled = false;
+        this.#paint();
+    }
+
+    async #toggleTranscription() {
+        const transcriber = this.transcriber;
+        if (transcriber.enabled) transcriber.disable(); else await transcriber.enable();
         this.#paint();
     }
 
@@ -95,7 +117,24 @@ export default class UltimaConference extends AgoraComponent {
             button.textContent = `${label}: ${on ? 'ligado' : 'desligado'}`;
             button.disabled = !room.canPublish;
         }
+        this.#paintTranscription();
         this.#paintTiles(people);
+    }
+
+    #paintTranscription() {
+        const transcriber = this.transcriber;
+        const box = this.rootNode.querySelector('#transcription');
+        box.toggleAttribute('hidden', !transcriber);
+        if (!transcriber) return;
+        const button = this.rootNode.querySelector('#transcribe');
+        button.setAttribute('aria-pressed', String(transcriber.enabled));
+        button.textContent = transcriber.enabled ? 'Transcrição ligada' : 'Transcrever minha fala';
+        button.disabled = !transcriber.supported || !transcriber.canWrite || transcriber.state === 'loading';
+        const language = this.rootNode.querySelector('#language');
+        if (language.value !== transcriber.language) language.value = transcriber.language;
+        const text = transcriber.state === 'loading' ? `Carregando o modelo de transcrição… ${Math.round(transcriber.progress * 100)}% (só na primeira vez).`
+            : transcriber.error ?? (!transcriber.supported ? transcriber.unsupportedReason : !transcriber.canWrite ? 'Seu papel não permite transcrever.' : T_STATUS[transcriber.state] ?? '');
+        this.rootNode.querySelector('#t-status').textContent = text;
     }
 
     #paintTiles(people) {
@@ -110,8 +149,9 @@ export default class UltimaConference extends AgoraComponent {
                 const avatar = h('div', { class: 'avatar' });
                 const name = h('span', { class: 'name' });
                 const off = h('span', { class: 'off' });
-                const element = h('div', { class: 'tile', role: 'listitem' }, video, avatar, h('div', { class: 'label' }, name, off));
-                tile = { element, video, avatar, name, off };
+                const caption = h('div', { class: 'caption', 'aria-hidden': 'true' });
+                const element = h('div', { class: 'tile', role: 'listitem' }, video, avatar, caption, h('div', { class: 'label' }, name, off));
+                tile = { element, video, avatar, name, off, caption };
                 this.#tiles.set(person.clientId, tile);
             }
             const hasVideo = !!person.stream && person.cam;
@@ -124,8 +164,9 @@ export default class UltimaConference extends AgoraComponent {
             tile.avatar.style.background = person.user.color ?? '#667';
             tile.avatar.textContent = [...(person.user.name ?? '?').replace(/^Participante\s*/, '')][0]?.toUpperCase() ?? '?';
             tile.name.textContent = person.self ? `${person.user.name} (você)` : person.user.name;
-            tile.off.textContent = [person.mic ? '' : '🔇', person.cam ? '' : '🚫'].filter(Boolean).join(' ');
-            tile.element.setAttribute('aria-label', `${person.user.name}${person.self ? ' (você)' : ''}: microfone ${person.mic ? 'ligado' : 'desligado'}, câmera ${person.cam ? 'ligada' : 'desligada'}${person.speaking && person.mic ? ', falando' : ''}`);
+            tile.off.textContent = [person.mic ? '' : '🔇', person.cam ? '' : '🚫', person.transcribing ? '📝' : ''].filter(Boolean).join(' ');
+            tile.caption.textContent = this.transcript?.captionOf(person.user.id) ?? '';
+            tile.element.setAttribute('aria-label', `${person.user.name}${person.self ? ' (você)' : ''}: microfone ${person.mic ? 'ligado' : 'desligado'}, câmera ${person.cam ? 'ligada' : 'desligada'}${person.speaking && person.mic ? ', falando' : ''}${person.transcribing ? ', sendo transcrito' : ''}`);
             container.append(tile.element);                  // keeps the order: me first
         }
     }

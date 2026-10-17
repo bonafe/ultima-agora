@@ -4,7 +4,11 @@
   "title": "Chamada",
   "version": "1.0.0",
   "category": "collaboration",
-  "description": "Áudio e vídeo com quem está no workspace, em tiles pequenos. Câmera e microfone só ligam quando você pede.",
+  "description": "Áudio e vídeo com quem está no workspace, em tiles pequenos, com transcrição opcional da sua fala. Câmera e microfone só ligam quando você pede.",
   "module": "./ultima-conference.js",
-  "capabilities": ["conference", "resizable"]
+  "capabilities": [
+    "conference",
+    "transcript",
+    "resizable"
+  ]
 }

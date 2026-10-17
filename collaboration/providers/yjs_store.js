@@ -9,6 +9,9 @@ import { YjsPresence } from '../presence/presence.js';
 import { SyncProvider, webSocketTransport } from './sync_provider.js';
 import { ChatClient } from './chat_client.js';
 import { MeshProvider } from '../../conference/mesh/mesh_provider.js';
+import { WhisperProvider } from '../../transcription/whisper/whisper_provider.js';
+import { Transcriber } from '../../transcription/transcriber.js';
+import { TranscriptClient } from './transcript_client.js';
 
 const SAVE_DELAY_MS = 150;
 const PERSISTENCE = 'persistence';
@@ -16,11 +19,14 @@ const PERSISTENCE = 'persistence';
 export class YjsStateStore {
     #backend;
     #sync;
+    #transcription;
     #docs = new Map();
 
-    constructor({ backend, sync = null }) {
+    //transcription: the engine for the call transcript (WhisperProvider by default; tests inject another)
+    constructor({ backend, sync = null, transcription = null }) {
         this.#backend = backend;
         this.#sync = sync;
+        this.#transcription = transcription;
     }
 
     get synced() { return this.#sync !== null; }
@@ -63,6 +69,15 @@ export class YjsStateStore {
                 onSignal: fn => { signalListeners.add(fn); return () => signalListeners.delete(fn); },
             };
             doc.conference = new MeshProvider().connect({ roomId: workspaceId, signaling, presence: doc.presence, me, canPublish: () => doc.role !== 'viewer' });
+            //Transcription (D-37): each person's speech is transcribed on their own device (Whisper in the browser) and the
+            //text goes to the workspace's transcript log, outside the document like the chat.
+            doc.transcript = new TranscriptClient({
+                me,
+                send: request => provider?.sendTranscript(request) ?? false,
+                canWrite: () => doc.role !== 'viewer',
+                available: () => this.#sync !== null,
+            });
+            doc.transcriber = new Transcriber({ engine: this.#transcription ?? new WhisperProvider(), client: doc.transcript, room: doc.conference });
         }
 
         let timer = null;
@@ -93,8 +108,9 @@ export class YjsStateStore {
                     if (session.role) doc.role = session.role;
                     return webSocketTransport(`${this.#sync.url}/${encodeURIComponent(workspaceId)}`, session.token);
                 },
-                onStatus: status => { refreshStatus(); if (status === 'synced') doc.chat?.onConnected(); },
+                onStatus: status => { refreshStatus(); if (status === 'synced') { doc.chat?.onConnected(); doc.transcript?.onConnected(); } },
                 onChat: event => doc.chat?.receive(event),
+                onTranscript: event => doc.transcript?.receive(event),
                 onSignal: event => { for (const fn of [...signalListeners]) fn(event); },
                 onControl: message => {
                     if (message.type === 'role') doc.role = message.role;
@@ -130,6 +146,7 @@ export class YjsStateStore {
     closeAll() { for (const id of [...this.#docs.keys()]) this.forget(id); }
 
     forget(workspaceId) {
+        this.#docs.get(workspaceId)?.transcriber?.destroy();
         this.#docs.get(workspaceId)?.conference?.destroy();
         this.#docs.get(workspaceId)?.provider?.destroy();
         this.#docs.delete(workspaceId);

@@ -100,7 +100,7 @@ Seções:
 - **R-A11Y-1.** Todo o shell e os componentes do núcleo operáveis por **teclado**, com foco visível e ordem coerente, e rótulos ARIA. Alvo: WCAG 2.2 AA.
 - **R-A11Y-2.** Todas as operações por arrastar têm **alternativa por teclado/menus** (adicionar componente, mover entre painéis, criar conexão).
 - **R-A11Y-3.** Alterações de colaboração relevantes anunciadas via `aria-live`, sem excesso.
-- **R-A11Y-4.** Vídeo: legendas/transcrição são desejáveis (F3) e dependem do provider.
+- **R-A11Y-4.** Vídeo: legendas/transcrição: a legenda ao vivo e o componente `ultima-transcript` (6.2.1, D-37) atendem; dependem do modelo instalado.
 - **R-I18N-1.** Textos de interface externalizados, com `pt-BR` como idioma padrão e inglês secundário. Datas, números e fusos pelo `Intl`.
 - **R-I18N-2.** Componentes declaram seus textos em arquivos próprios (`i18n/pt-BR.json`, `i18n/en.json`).
 

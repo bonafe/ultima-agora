@@ -233,7 +233,7 @@ export class AgoraShell extends ReactiveComponent {
         await this.#registry.load('ultima-conference');
         const manifest = this.#registry.getManifest('ultima-conference');
         const element = document.createElement(manifest.tag);
-        element.attach({ instanceId: 'shell-call', manifest, config: {}, services: { conference: room } });
+        element.attach({ instanceId: 'shell-call', manifest, config: {}, services: { conference: room, transcript: workspace.transcript ?? undefined, transcriber: workspace.transcriber ?? undefined } });
         pane.append(element);
         this.#callElement = element;
         this.#callRoom = room;

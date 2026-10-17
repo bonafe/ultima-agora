@@ -1,0 +1,10 @@
+{
+  "name": "ultima-transcript",
+  "tag": "ultima-transcript",
+  "title": "Transcrição",
+  "version": "1.0.0",
+  "category": "collaboration",
+  "description": "O que foi dito nas chamadas do workspace, por pessoa. Cada um é transcrito no próprio dispositivo, e só o texto vem para cá.",
+  "module": "./ultima-transcript.js",
+  "capabilities": ["transcript", "resizable"]
+}

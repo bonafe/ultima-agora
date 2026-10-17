@@ -1,6 +1,6 @@
 //Validation of component manifests (see docs/especificacao/03-componentes-e-contrato.md, 3.3).
 
-export const CAPABILITIES = ['resizable', 'connectable', 'shared-content', 'presence-aware', 'context-provider', 'domain-data', 'file-store', 'agent-callable', 'chat', 'conference'];
+export const CAPABILITIES = ['resizable', 'connectable', 'shared-content', 'presence-aware', 'context-provider', 'domain-data', 'file-store', 'agent-callable', 'chat', 'conference', 'transcript'];
 export const ACTION_EFFECTS = ['self', 'state', 'emit', 'feed', 'create'];
 export const CONFIG_TYPES = ['string', 'text', 'integer', 'number', 'boolean', 'enum', 'color', 'date', 'reference', 'list'];
 

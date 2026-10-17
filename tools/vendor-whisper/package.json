@@ -1,0 +1,8 @@
+{
+  "name": "agora-vendor-whisper",
+  "private": true,
+  "description": "Copies the prebuilt browser runtime for in-browser Whisper (transformers.js + ONNX Runtime Web, CPU/WASM) into vendor/whisper (D-06). Run once per upgrade; not needed to run the app.",
+  "type": "module",
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": { "@huggingface/transformers": "4.3.1" }
+}

@@ -27,6 +27,17 @@ const timed = async (condition, ms = 4000) => { const t0 = performance.now(); co
 const registry = async () => { const r = new ComponentRegistry(); await registerCoreComponents(r); return r; };
 const sleepMs = wait;
 
+//A stand-in for Whisper: says one sentence a little after it starts listening (Whisper itself is tested in tests/tests.js)
+const fakeWhisper = name => ({
+    supported: true,
+    load: async onProgress => { onProgress(0.5); await wait(20); onProgress(1); },
+    start(track, { onSegment, onState }) {
+        onState('listening');
+        const timer = setTimeout(() => onSegment({ text: `Olá, aqui é ${name}.`, startedAt: Date.now() }), 150);
+        return { stop: () => clearTimeout(timer) };
+    },
+});
+
 //One client of the system
 class Person {
     constructor(name, role, workspaceId) { this.name = name; this.role = role; this.workspaceId = workspaceId; }
@@ -34,7 +45,7 @@ class Person {
     static async join(name, role, workspaceId = null) {
         const person = new Person(name, role, workspaceId);
         person.dbName = `acc-${uuid()}`;
-        person.host = new DevHost({ dbName: person.dbName, sync: { http: HTTP, url: WS }, role, identity: { id: `u-${name.toLowerCase()}`, name }, });
+        person.host = new DevHost({ dbName: person.dbName, sync: { http: HTTP, url: WS }, role, identity: { id: `u-${name.toLowerCase()}`, name }, transcription: fakeWhisper(name) });
         person.registry = await registry();
         person.meta = workspaceId ? await person.host.adopt(workspaceId, 'Aceite') : await person.host.create('Aceite');
         person.workspaceId = person.meta.id;
@@ -61,7 +72,7 @@ class Person {
     get synced() { return this.doc.provider?.status === 'synced'; }
     element(id) { return this.view.rootNode.querySelector(`[data-instance-id="${id}"]`); }
     close() { this.doc.provider?.destroy(); this.box?.remove(); this.host.store.forget(this.meta.id); }
-    async reopen() { this.close(); this.host = new DevHost({ dbName: this.dbName, sync: { http: HTTP, url: WS }, role: this.role, identity: { id: `u-${this.name.toLowerCase()}`, name: this.name } }); await this.open(); }
+    async reopen() { this.close(); this.host = new DevHost({ dbName: this.dbName, sync: { http: HTTP, url: WS }, role: this.role, identity: { id: `u-${this.name.toLowerCase()}`, name: this.name }, transcription: fakeWhisper(this.name) }); await this.open(); }
 }
 
 const team = async (people, ...specs) => {
@@ -394,6 +405,36 @@ test('E24 conference: two people see and hear each other through the real server
     assert(await until(() => !named(rooms.maria, 'Carlos') && !named(rooms.visitor, 'Carlos'), 3000), 'Carlos is gone from the others at once');
     assert(await until(() => named(rooms.maria, 'Visitante')), 'the viewer is still listed');
     rooms.maria.destroy(); rooms.visitor.destroy();
+}));
+
+
+test('E25 transcription: each person is transcribed on their own device; everyone sees who is being transcribed, the live caption and the transcript; a viewer reads but cannot be transcribed', guard(async people => {
+    const [maria, carlos, visitor] = await team(people, ['Maria', 'owner'], ['Carlos', 'editor'], ['Visitante', 'viewer']);
+    assert(await until(() => maria.doc.transcriber && carlos.doc.transcriber && visitor.doc.transcriber));
+    const rooms = { maria: maria.doc.conference, carlos: carlos.doc.conference, visitor: visitor.doc.conference };
+    await rooms.maria.join({ mic: true });
+    await rooms.carlos.join({ mic: true });
+    await rooms.visitor.join();
+    const named = (room, name) => room.participants.find(p => p.user.name === name);
+
+    assert(!named(rooms.maria, 'Carlos').transcribing, 'nobody is transcribed until they ask');
+    await carlos.doc.transcriber.enable();
+    assert(await until(() => named(rooms.maria, 'Carlos')?.transcribing && named(rooms.visitor, 'Carlos')?.transcribing), 'the others see that Carlos is being transcribed');
+    assert(!named(rooms.maria, 'Maria').transcribing, 'and that Maria is not');
+
+    assert(await until(() => [maria, carlos, visitor].every(p => p.doc.transcript.segments.some(s => s.body === 'Olá, aqui é Carlos.' && s.author.id === 'u-carlos' && !s.pending))), 'Carlos\'s words reach everyone, authored by him');
+    assert(!maria.doc.transcript.segments.some(s => s.author.id === 'u-maria'), 'Maria said nothing for the transcript');
+    assert(carlos.doc.transcript.captionOf('u-carlos') === 'Olá, aqui é Carlos.' && maria.doc.transcript.captionOf('u-carlos') === 'Olá, aqui é Carlos.', 'the live caption is there for the speaker and the listeners');
+
+    await visitor.doc.transcriber.enable();
+    assert(visitor.doc.transcriber.state === 'off' && !named(rooms.maria, 'Visitante').transcribing, 'a viewer is not transcribed');
+
+    carlos.doc.transcriber.disable();
+    assert(await until(() => !named(rooms.maria, 'Carlos')?.transcribing), 'turning it off is seen at once');
+    const late = await Person.join('Tardia', 'participant', maria.workspaceId);
+    people.push(late);
+    assert(await until(() => late.doc.transcript.segments.some(s => s.body === 'Olá, aqui é Carlos.')), 'someone who arrives later reads what was said (the history comes from the server)');
+    rooms.maria.destroy(); rooms.carlos.destroy(); rooms.visitor.destroy();
 }));
 
 // ---------------------------------------------------------------- runner

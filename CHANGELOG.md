@@ -2,6 +2,16 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (transcription — Whisper in the browser)
+
+### Added
+- **Automatic transcription of each person in the call** (D-37, spec 6.2.1): Whisper (transformers.js + ONNX Runtime Web, CPU/WASM) runs in a worker IN the browser, vendored in `vendor/whisper/` (`tools/vendor-whisper`), with the model served from our own origin (`models/`, outside git; `tools/baixar_modelo_whisper.py`). Each person is transcribed on their own device, the audio never leaves it, only the text goes to the workspace; no third parties, works offline.
+- `transcription/`: `WhisperProvider` (worker, audio worklet, 16 kHz resampling, voice-activity cutting into utterances, discard of what Whisper invents on silence), `Transcriber` (the person's switch: never starts by itself, follows the microphone, ends when leaving the call). Everyone sees who is being transcribed (presence); live caption on the tile.
+- `ultima-transcript` component (per-person list, search, copy, download `.txt`) and `ultima-conference` controls (switch, language: pt/en/es/auto, status, "Abrir transcrição").
+- `agora-sync`: transcript log (message type 6) separate from the chat and outside the document: author from the token, idempotent by `clientId`, history for late joiners, rate limit, persistence, `TRANSCRIPT_RETENTION_DAYS`. `TranscriptClient` with an outbox for offline.
+- Docker: cross-origin isolation headers (COOP/COEP) for multi-threaded Whisper (~2× faster). Precache now also lists `conference/` and `transcription/` (they were missing).
+- Tests: audio logic (resampling, voice detection, filters), transcript client, switch, the conference component, Whisper end to end with a recorded voice (skipped when the model is not installed), 4 server tests and E25 in the acceptance suite.
+
 ## Unreleased (conference — camera and microphone)
 
 ### Added

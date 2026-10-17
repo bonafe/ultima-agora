@@ -56,6 +56,7 @@ class MeshRoom extends ConferenceRoom {
     #peers = new Map();            // clientId -> { clientId, user, pc, gen, initiator, stream, queue, senders, graceTimer, stateTimer }
     #roster = new Set();           // clientIds seen in the call, to emit joined/left
     #speaking = false;
+    #transcribing = false;
     #meter;
     #stops = [];
     #destroyed = false;
@@ -81,6 +82,16 @@ class MeshRoom extends ConferenceRoom {
         return null;
     }
     get canPublish() { return this.#o.canPublish(); }
+    //My microphone track while it is on (the transcription listens to it); null when off
+    get localAudioTrack() { return this.#tracks.audio; }
+
+    //Publishes that I am being transcribed, so everyone sees it (nobody is transcribed without the others knowing)
+    setTranscribing(on) {
+        if (this.#transcribing === !!on) return;
+        this.#transcribing = !!on;
+        if (this.#joined) this.#publish();
+        this._changed();
+    }
 
     //Replaces the STUN/TURN list (the server announces it after connecting); applies to connections made from now on
     setIceServers(iceServers) { if (Array.isArray(iceServers)) this.#iceServers = iceServers; }
@@ -90,11 +101,11 @@ class MeshRoom extends ConferenceRoom {
         if (this.#joined) {
             const video = this.#tracks.video;
             if (video && this.#cameraStream?.getVideoTracks()[0] !== video) this.#cameraStream = new MediaStream([video]);
-            result.push({ clientId: this.#myId, user: this.#o.presence.local.user ?? this.#o.me, self: true, mic: !!this.#tracks.audio, cam: !!video, speaking: this.#speaking, stream: video ? this.#cameraStream : null });
+            result.push({ clientId: this.#myId, user: this.#o.presence.local.user ?? this.#o.me, self: true, mic: !!this.#tracks.audio, cam: !!video, speaking: this.#speaking, transcribing: this.#transcribing, stream: video ? this.#cameraStream : null });
         }
         for (const peer of this.#inCall()) {
             const c = peer.conference;
-            result.push({ clientId: peer.clientId, user: peer.user, self: false, mic: !!c.mic, cam: !!c.cam, speaking: !!c.speaking, stream: this.#peers.get(peer.clientId)?.stream ?? null });
+            result.push({ clientId: peer.clientId, user: peer.user, self: false, mic: !!c.mic, cam: !!c.cam, speaking: !!c.speaking, transcribing: !!c.transcribing, stream: this.#peers.get(peer.clientId)?.stream ?? null });
         }
         return result;
     }
@@ -126,6 +137,7 @@ class MeshRoom extends ConferenceRoom {
         this.#meter.stop();
         this.#speaking = false;
         for (const id of [...this.#peers.keys()]) this.#closePeer(id);
+        this.#transcribing = false;
         this.#o.presence.setLocal({ conference: null });
         this.#reconcile();
         this._changed();
@@ -175,7 +187,7 @@ class MeshRoom extends ConferenceRoom {
     }
 
     #publish() {
-        this.#o.presence.setLocal({ conference: { in: true, mic: !!this.#tracks.audio, cam: !!this.#tracks.video, speaking: this.#speaking && !!this.#tracks.audio } });
+        this.#o.presence.setLocal({ conference: { in: true, mic: !!this.#tracks.audio, cam: !!this.#tracks.video, speaking: this.#speaking && !!this.#tracks.audio, transcribing: this.#transcribing } });
     }
 
     // ---- who should be connected ----

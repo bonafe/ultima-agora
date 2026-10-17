@@ -16,6 +16,10 @@ import { IndexedDbBackend } from '../collaboration/providers/indexeddb_persisten
 import { ChatClient } from '../collaboration/providers/chat_client.js';
 import { MeshProvider } from '../conference/mesh/mesh_provider.js';
 import { ConferenceError } from '../conference/conference_provider.js';
+import { Resampler, Segmenter, cleanTranscript } from '../transcription/whisper/speech.js';
+import { WhisperProvider } from '../transcription/whisper/whisper_provider.js';
+import { Transcriber } from '../transcription/transcriber.js';
+import { TranscriptClient } from '../collaboration/providers/transcript_client.js';
 import { uuid } from '../core/ids.js';
 import { TypeRegistry, registerCoreTypes } from '../core/connections/types.js';
 import { BusError } from '../core/connections/bus.js';
@@ -692,6 +696,11 @@ const servicesFor = (manifest, emitted) => {
     if (capabilities.includes('presence-aware')) services.presence = { setActivity: () => {} };
     if (capabilities.includes('domain-data')) services.domain = { get: async () => ({ results: [] }), forWorkspace() { return this; } };
     if (capabilities.includes('conference')) services.conference = new MeshProvider({ mediaDevices: null }).connect({ roomId: 'contract', me: { id: 'u', name: 'U' }, signaling: { clientId: 1, send: () => false, onSignal: () => () => {} }, presence: { local: {}, setLocal() {}, peers: () => [], onPeers: () => () => {} } });
+    if (capabilities.includes('transcript')) {
+        services.transcript = new TranscriptClient({ me: { id: 'u', name: 'U' } });
+        services.transcriber = new Transcriber({ engine: { supported: true, load: async () => {}, start: () => ({ stop() {} }) }, client: services.transcript, storage: null,
+            room: { on: () => () => {}, joined: false, localAudioTrack: null, setTranscribing() {} } });
+    }
     if (capabilities.includes('chat')) services.chat = new ChatClient({ workspaceId: 'contract', me: { id: 'u', name: 'U' }, send: () => false });
     services.setConfig = () => [];
     return services;
@@ -701,7 +710,7 @@ test('contract: every component of the catalog honours the AgoraComponent contra
     const registry = new ComponentRegistry();
     await registerCoreComponents(registry);
     const manifests = registry.list();
-    for (const name of ['ultima-text', 'ultima-notes', 'ultima-table', 'ultima-graph', 'ultima-chat', 'ultima-conference']) assert(manifests.some(m => m.name === name), `the catalog lost ${name}`);
+    for (const name of ['ultima-text', 'ultima-notes', 'ultima-table', 'ultima-graph', 'ultima-chat', 'ultima-conference', 'ultima-transcript']) assert(manifests.some(m => m.name === name), `the catalog lost ${name}`);
 
     for (const manifest of manifests) {
         const label = manifest.name;
@@ -746,7 +755,7 @@ test('contract: every component of the catalog honours the AgoraComponent contra
         assert(json !== undefined && json.length < 2000 && JSON.stringify(JSON.parse(json)) === json, `${label}: describeContext is not small, plain JSON`);
 
         //Capabilities it did not declare stay closed (R-CAP-1)
-        for (const [service, capability] of [['shared', 'shared-content'], ['chat', 'chat'], ['conference', 'conference'], ['domain', 'domain-data'], ['presence', 'presence-aware']]) {
+        for (const [service, capability] of [['shared', 'shared-content'], ['chat', 'chat'], ['conference', 'conference'], ['transcript', 'transcript'], ['transcriber', 'transcript'], ['domain', 'domain-data'], ['presence', 'presence-aware']]) {
             if (!(manifest.capabilities ?? []).includes(capability)) { try { void element[service]; throw new Error('open'); } catch (error) { assert(error.message.includes(capability), `${label}: "${service}" must need "${capability}"`); } }
         }
 
@@ -1102,7 +1111,7 @@ test('palette: lists registered components, filters by search and announces addi
     palette.registry = registry;
     await wait(50);
     const items = () => [...palette.rootNode.querySelectorAll('button.item')];
-    assert(items().length === 6);
+    assert(items().length === 7);
     const search = palette.rootNode.querySelector('#search');
     search.value = 'markdown'; search.dispatchEvent(new Event('input'));
     assert(items().length === 1 && items()[0].textContent.startsWith('Notas'));
@@ -1929,6 +1938,227 @@ test('conference: events say who joined, left and was heard; an unsupported cont
     });
     assert(!none.supported && none.unsupportedReason.length > 10);
     try { await none.join({ mic: true }); throw new Error('joined'); } catch (error) { assert(error.code === 'unsupported'); }
+});
+
+// --- transcription: audio logic, the transcript client, the switch, and Whisper itself when the model is installed ---
+
+const tone = (seconds, level = 0.2, rate = 16000, hz = 220) => Float32Array.from({ length: Math.round(seconds * rate) }, (_, i) => level * Math.sin(2 * Math.PI * hz * i / rate));
+const hush = (seconds, level = 0.001, rate = 16000) => Float32Array.from({ length: Math.round(seconds * rate) }, (_, i) => level * Math.sin(i * 12.9898));
+const cat = (...parts) => { const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0)); let at = 0; for (const p of parts) { out.set(p, at); at += p.length; } return out; };
+const segment = signal => { const found = []; const segmenter = new Segmenter({ onUtterance: u => found.push(u) }); for (let i = 0; i < signal.length; i += 1234) segmenter.feed(signal.subarray(i, i + 1234)); segmenter.flush(); return found; };
+
+test('transcription: the resampler brings 48 kHz and 44.1 kHz to 16 kHz keeping the signal, block by block', () => {
+    for (const rate of [48000, 44100, 16000]) {
+        const input = tone(1, 0.5, rate, 300);
+        const resampler = new Resampler(rate);
+        const parts = [];
+        for (let i = 0; i < input.length; i += 2048) parts.push(resampler.process(input.subarray(i, i + 2048)));      // as the audio thread delivers it
+        const out = cat(...parts);
+        assert(Math.abs(out.length - 16000) <= 2, `${rate}: ${out.length} samples`);
+        const peak = out.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+        assert(peak > 0.4 && peak < 0.55, `${rate}: the amplitude survived (${peak.toFixed(3)})`);
+    }
+});
+
+test('transcription: speech after silence becomes one utterance, with a little before and after; noise, clicks and silence become none', () => {
+    const found = segment(cat(hush(1), tone(1.2), hush(1.5)));
+    assert(found.length === 1, `${found.length} utterances`);
+    assert(found[0].durationMs > 1200 && found[0].durationMs < 2200, `duration ${found[0].durationMs}`);
+    assert(found[0].startedAt > 400 && found[0].startedAt < 900, `starts near 1 s minus the pre-roll (${found[0].startedAt})`);
+    assert(segment(cat(hush(1), tone(0.05), hush(2))).length === 0, 'a click is not speech');
+    assert(segment(cat(hush(1), tone(0.3), hush(2))).length === 0, 'under 400 ms is not speech');
+    assert(segment(hush(5, 0.01)).length === 0, 'steady room noise is not speech');
+    assert(segment(cat(hush(1), tone(0.8), hush(0.2), tone(0.8), hush(2))).length === 1, 'a short breath inside a sentence does not split it');
+    assert(segment(cat(tone(0.8), hush(1.2), tone(0.8), hush(1.2))).length === 2, 'a real pause does');
+});
+
+test('transcription: speech without a pause is cut at 25 s (Whisper takes 30 s at most) and the rest follows', () => {
+    const found = segment(cat(hush(0.5), tone(40), hush(1.5)));
+    assert(found.length === 2 && found.every(u => u.durationMs <= 25100), found.map(u => u.durationMs).join());
+});
+
+test('transcription: what Whisper invents on silence is discarded; real speech and loops are handled', () => {
+    for (const phantom of ['', '  ', '...', '[Música]', '(aplausos)', '♪ música ♪', 'Obrigado por assistir!', 'Legendas pela comunidade Amara.org', 'Thanks for watching.', 'Inscreva-se no canal']) assert(cleanTranscript(phantom) === '', `kept: "${phantom}"`);
+    assert(cleanTranscript('  Vamos   revisar a tabela. ') === 'Vamos revisar a tabela.');
+    assert(cleanTranscript('Obrigado pela explicação, Ana.') === 'Obrigado pela explicação, Ana.', 'a real thanks stays');
+    assert(cleanTranscript('e e e e e e e e e e e e') === 'e e e', 'a decoding loop is cut');
+});
+
+const segmentEvent = (seq, author, body, clientId = `c${seq}`) => ({ type: 'segment', segment: { id: `s${seq}`, seq, clientId, author: { id: author, name: author }, body, createdAt: new Date(2026, 9, 16, 14, seq).toISOString() } });
+test('transcript client: sends once, confirmation replaces the pending copy, the outbox survives being offline, captions fade', () => {
+    let connected = false;
+    const sent = [];
+    let now = 1000;
+    const client = new TranscriptClient({ me: { id: 'me', name: 'Eu' }, send: request => { if (!connected) return false; sent.push(request); return true; }, now: () => now, captionMs: 5000 });
+    const clientId = client.send('primeira frase');
+    assert(client.segments.length === 1 && client.segments[0].pending && sent.length === 0 && client.pending === 1, 'offline: pending, not sent');
+    assert(client.captionOf('me') === 'primeira frase', 'my own caption shows at once');
+    connected = true; client.onConnected();
+    assert(sent.filter(r => r.type === 'send').length === 1 && sent.some(r => r.type === 'history'), 'on connect: resent and history requested');
+    client.receive(segmentEvent(1, 'me', 'primeira frase', clientId));
+    assert(client.segments.length === 1 && !client.segments[0].pending && client.pending === 0, 'confirmed, not duplicated');
+    client.receive(segmentEvent(1, 'me', 'primeira frase', clientId));
+    assert(client.segments.length === 1, 'a repeated delivery changes nothing');
+    client.receive(segmentEvent(2, 'ana', 'resposta da Ana'));
+    assert(client.captionOf('ana') === 'resposta da Ana');
+    now += 6000;
+    assert(client.captionOf('ana') === null && client.captionOf('me') === null, 'captions fade after a few seconds');
+    assert(client.export().split('\n').length === 2 && client.export().includes('Ana: resposta') === false && client.export().includes('ana: resposta da Ana'), client.export());
+});
+
+test('transcript client: history merges in order; a refused segment is not retried forever, a rate limit is', () => {
+    const client = new TranscriptClient({ me: { id: 'me', name: 'Eu' }, send: () => false });
+    client.receive(segmentEvent(3, 'a', 'três'));
+    client.receive({ type: 'history', hasMore: true, messages: [segmentEvent(1, 'a', 'um').segment, segmentEvent(2, 'b', 'dois').segment, segmentEvent(3, 'a', 'três').segment] });
+    assert(client.segments.map(s => s.body).join() === 'um,dois,três' && client.hasMore, 'ordered by seq, no duplicate');
+    const refused = client.send('negado');
+    client.receive({ type: 'error', ref: refused, code: 'forbidden', message: 'Seu papel não permite transcrever.' });
+    assert(client.pending === 0 && client.lastError.includes('papel'), 'dropped');
+    const limited = client.send('devagar');
+    client.receive({ type: 'error', ref: limited, code: 'rate', message: 'muitos' });
+    assert(client.pending === 1, 'a rate limit keeps it for later');
+    const viewer = new TranscriptClient({ me: { id: 'v', name: 'V' }, canWrite: () => false });
+    throws(() => viewer.send('oi'), 'papel');
+});
+
+//A room and an engine that are just enough for the switch
+const fakeCall = () => {
+    const listeners = new Set();
+    const room = { joined: true, localAudioTrack: null, transcribing: false, on: (event, fn) => { listeners.add(fn); return () => listeners.delete(fn); }, setTranscribing(on) { this.transcribing = on; }, changed: () => listeners.forEach(fn => fn()) };
+    const engine = { supported: true, loads: 0, sessions: [], async load(onProgress) { this.loads++; onProgress(0.5); await wait(10); onProgress(1); }, start(track, options) { const session = { track, options, stopped: false, stop() { this.stopped = true; } }; this.sessions.push(session); return session; } };
+    return { room, engine };
+};
+const memoryStorage = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }; };
+
+test('transcriber: never starts by itself; needs the call; follows the microphone; what is said goes to the transcript; leaving the call turns it off', async () => {
+    const { room, engine } = fakeCall();
+    const sent = [];
+    const client = new TranscriptClient({ me: { id: 'me', name: 'Eu' }, send: r => { sent.push(r); return true; } });
+    const transcriber = new Transcriber({ engine, client, room, storage: memoryStorage() });
+    assert(transcriber.state === 'off' && engine.loads === 0 && !room.transcribing, 'nothing happens until the person asks');
+
+    room.joined = false;
+    await transcriber.enable();
+    assert(transcriber.state === 'off' && /chamada/.test(transcriber.error) && engine.loads === 0, 'outside the call: refused with a reason');
+
+    room.joined = true;
+    const pending = transcriber.enable();
+    assert(transcriber.state === 'loading' && room.transcribing, 'the others are told right away');
+    await pending;
+    assert(transcriber.state === 'waiting' && engine.sessions.length === 0, 'microphone off: waits, listens to nothing');
+
+    room.localAudioTrack = { id: 'mic1' }; room.changed();
+    assert(transcriber.state === 'listening' && engine.sessions.length === 1 && engine.sessions[0].track.id === 'mic1');
+    engine.sessions[0].options.onSegment({ text: 'bom dia a todos', startedAt: 5 });
+    assert(sent.some(r => r.type === 'send' && r.body === 'bom dia a todos'), 'the segment goes to the transcript');
+
+    room.localAudioTrack = null; room.changed();
+    assert(engine.sessions[0].stopped && transcriber.state === 'waiting', 'mic off: the session stops');
+    room.localAudioTrack = { id: 'mic2' }; room.changed();
+    assert(engine.sessions.length === 2 && transcriber.state === 'listening', 'mic on again: a new session');
+
+    room.joined = false; room.changed();
+    assert(transcriber.state === 'off' && !room.transcribing && engine.sessions[1].stopped, 'leaving the call turns it off for everyone to see');
+    transcriber.destroy();
+});
+
+test('transcriber: errors are explained, the language is remembered, a viewer cannot transcribe', async () => {
+    const { room, engine } = fakeCall();
+    const client = new TranscriptClient({ me: { id: 'me', name: 'Eu' }, send: () => true });
+    const storage = memoryStorage();
+    engine.load = async () => { throw Object.assign(new Error('O modelo de transcrição (whisper-base) não está instalado neste servidor.'), { code: 'no_model' }); };
+    const transcriber = new Transcriber({ engine, client, room, storage });
+    await transcriber.enable();
+    assert(transcriber.state === 'error' && !transcriber.enabled && !room.transcribing && /não está instalado/.test(transcriber.error), 'a missing model is said plainly, and nobody is shown as being transcribed');
+
+    assert(transcriber.language === 'pt');
+    transcriber.setLanguage('en');
+    assert(new Transcriber({ engine, client, room, storage }).language === 'en', 'remembered on this device');
+    transcriber.setLanguage('klingon');
+    assert(transcriber.language === 'en', 'unknown languages are ignored');
+
+    const viewer = new Transcriber({ engine: fakeCall().engine, client: new TranscriptClient({ me: { id: 'v', name: 'V' }, canWrite: () => false }), room: fakeCall().room, storage: memoryStorage() });
+    await viewer.enable();
+    assert(viewer.state === 'off' && /papel/.test(viewer.error));
+});
+
+test('conference component: the transcription switch drives the transcriber; captions, the "being transcribed" mark and the transcript list follow', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    await registry.load('ultima-conference');
+    await registry.load('ultima-transcript');
+    const call = newCall();
+    const ana = call.join('Ana'), bia = call.join('Bia');
+    const client = new TranscriptClient({ me: ana.user, send: request => { if (request.type === 'send') client.receive({ type: 'segment', segment: { id: `s-${request.clientId}`, seq: client.segments.length + 1, clientId: request.clientId, author: ana.user, body: request.body, createdAt: new Date().toISOString() } }); return true; } });
+    const { engine } = fakeCall();
+    const transcriber = new Transcriber({ engine, client, room: ana.room, storage: memoryStorage() });
+
+    const mount = async (tag, services) => {
+        const element = document.createElement(tag);
+        element.attach({ instanceId: tag, manifest: registry.getManifest(tag), config: {}, services });
+        element.style.cssText = 'display:block;width:380px;height:420px';
+        document.body.append(element);
+        await element.whenLoaded();
+        return element;
+    };
+    const conference = await mount('ultima-conference', { conference: ana.room, transcript: client, transcriber });
+    const list = await mount('ultima-transcript', { transcript: client });
+    const $ = selector => conference.rootNode.querySelector(selector);
+
+    await ana.room.join({ mic: true });
+    await bia.room.join({ cam: true });
+    assert($('#transcription').hidden === false && $('#transcribe').getAttribute('aria-pressed') === 'false' && !transcriber.enabled, 'the switch is there, off: joining the call does not start it');
+    $('#transcribe').click();
+    assert(await untilTrue(() => transcriber.state === 'listening'), `the click turned the transcriber on (${transcriber.state})`);
+    assert($('#transcribe').getAttribute('aria-pressed') === 'true' && $('#t-status').textContent.includes('Transcrevendo'), 'and the panel says so');
+    assert(ana.room.participants[0].transcribing, 'and everyone is told');
+
+    engine.sessions[0].options.onSegment({ text: 'a receita caiu no segundo trimestre', startedAt: Date.now() });
+    await wait(50);
+    const tile = [...conference.rootNode.querySelectorAll('.tile')].find(t => t.classList.contains('self'));
+    assert(tile.querySelector('.caption').textContent === 'a receita caiu no segundo trimestre', 'the live caption shows on my tile');
+    assert(tile.querySelector('.label').textContent.includes('📝'), 'with the mark');
+    assert(list.rootNode.querySelector('.segment p').textContent === 'a receita caiu no segundo trimestre', 'and the transcript component lists it');
+    list.rootNode.querySelector('#search').value = 'receita'; list.rootNode.querySelector('#search').dispatchEvent(new Event('input'));
+    assert(list.rootNode.querySelector('mark')?.textContent === 'receita', 'search highlights the hit, as text (never markup)');
+
+    $('#language').value = 'en'; $('#language').dispatchEvent(new Event('change'));
+    assert(transcriber.language === 'en');
+    $('#transcribe').click();
+    assert(!transcriber.enabled && !ana.room.participants[0].transcribing && $('#transcribe').getAttribute('aria-pressed') === 'false', 'off again, for everyone');
+
+    conference.dispose(); list.dispose(); conference.remove(); list.remove();
+    ana.room.destroy(); bia.room.destroy();
+});
+
+//The real thing, end to end: a recorded voice goes through the microphone path (audio worklet, resampling, voice detection),
+//the worker and Whisper. Needs the model (tools/baixar_modelo_whisper.py): without it this test has nothing to run.
+test('transcription: Whisper in the browser transcribes real speech end to end (skipped when models/whisper-base is not installed)', async () => {
+    const installed = await fetch('../models/whisper-base/config.json', { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+    if (!installed) return;
+    const provider = new WhisperProvider({ size: 'base', modelBase: new URL('../models/', location.href).pathname });
+    if (!provider.supported) return;
+    await provider.load();
+    const wav = new Uint8Array(await (await fetch('./fixtures/jfk-16k.wav')).arrayBuffer());
+    const pcm = new Int16Array(wav.buffer.slice(44));
+    const context = new AudioContext({ sampleRate: 16000 });
+    const buffer = context.createBuffer(1, pcm.length, 16000);
+    buffer.copyToChannel(Float32Array.from(pcm, v => v / 32768), 0);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    const destination = context.createMediaStreamDestination();
+    source.connect(destination);
+    const heard = [];
+    const states = [];
+    const session = provider.start(destination.stream.getAudioTracks()[0], { language: 'en', onSegment: s => heard.push(s.text), onState: state => states.push(state) });
+    await wait(300);
+    await context.resume();
+    source.start();
+    const ok = await (async () => { const end = performance.now() + 40000; while (performance.now() < end) { if (heard.join(' ').toLowerCase().includes('country')) return true; await wait(200); } return false; })();
+    session.stop();
+    provider.destroy();
+    context.close();
+    assert(ok, `Whisper heard: "${heard.join(' | ')}" (states ${states.join()})`);
 });
 
 // --- runner ---

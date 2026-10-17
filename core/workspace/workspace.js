@@ -46,6 +46,9 @@ export class Workspace {
     get chat() { return this.#doc.chat ?? null; }
     //The conference room (ConferenceRoom) when the store provides one: live media is never part of the document
     get conference() { return this.#doc.conference ?? null; }
+    //The call transcript (TranscriptClient) and the person's own transcription switch (Transcriber), when the store provides them
+    get transcript() { return this.#doc.transcript ?? null; }
+    get transcriber() { return this.#doc.transcriber ?? null; }
     //The client components receive as `this.domain`, already scoped to this workspace when the host supports it
     get domain() { return this.#domain?.forWorkspace?.(this.#id) ?? this.#domain; }
     get registry() { return this.#registry; }

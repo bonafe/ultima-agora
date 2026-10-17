@@ -12,12 +12,13 @@ import { issueToken, verifyToken, checkSecret, ROLES } from './auth.js';
 import { mayWrite } from './permissions.js';
 import { ChatLog, ChatError } from './chat.js';
 
-const MSG_SYNC = 0, MSG_AWARENESS = 1, MSG_CONTROL = 3, MSG_CHAT = 4, MSG_SIGNAL = 5;
+const MSG_SYNC = 0, MSG_AWARENESS = 1, MSG_CONTROL = 3, MSG_CHAT = 4, MSG_SIGNAL = 5, MSG_TRANSCRIPT = 6;
 const CHAT_WRITERS = new Set(['owner', 'editor', 'participant']);        // viewers read the chat, they do not write (D-30)
 const CHAT_RATE = { perWindow: 20, windowMs: 10_000 };
 const CHAT_HISTORY = 100;
 const SIGNAL_RATE = { perWindow: 300, windowMs: 10_000 };      // ICE candidates come in bursts; this only stops a runaway client
 const SIGNAL_MAX_BYTES = 32 * 1024;
+const TRANSCRIPT_RATE = { perWindow: 30, windowMs: 10_000 };
 const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 //Close codes (4xxx are ours). The client does not retry 4400/4401/4403/4404, and does retry 4408.
 export const CLOSE = { BAD_REQUEST: 4400, UNAUTHORIZED: 4401, FORBIDDEN: 4403, EXPIRED: 4408, TOO_BIG: 1009 };
@@ -29,12 +30,14 @@ class Room {
     #file; #timer = null; #idleTimer = null;
 
     chat;
+    transcript;
 
-    constructor(id, dataDir, onIdle, log, chatRetentionDays = 0) {
+    constructor(id, dataDir, onIdle, log, chatRetentionDays = 0, transcriptRetentionDays = 0) {
         this.id = id;
         this.log = log;
         this.#file = dataDir ? join(dataDir, `${id}.bin`) : null;
         this.chat = new ChatLog({ file: dataDir ? join(dataDir, `${id}.chat.jsonl`) : null, retentionDays: chatRetentionDays });
+        this.transcript = new ChatLog({ file: dataDir ? join(dataDir, `${id}.transcript.jsonl`) : null, retentionDays: transcriptRetentionDays });
         this.onIdle = onIdle;
         if (this.#file && existsSync(this.#file)) Y.applyUpdate(this.doc, readFileSync(this.#file), 'disk');
         this.awareness.setLocalState(null);                      //the server itself is not a participant
@@ -52,6 +55,7 @@ class Room {
 
     //Sends a chat event to everyone connected to this workspace
     chatBroadcast(event) { for (const connection of this.connections) connection.chat(event); }
+    transcriptBroadcast(event) { for (const connection of this.connections) connection.transcript(event); }
 
     #broadcast(type, write, except) {
         for (const connection of this.connections) {
@@ -113,6 +117,18 @@ class Connection {
         encoding.writeVarString(e, JSON.stringify(event));
         this.send(encoding.toUint8Array(e));
     }
+    transcript(event) {
+        const e = encoding.createEncoder();
+        encoding.writeVarUint(e, MSG_TRANSCRIPT);
+        encoding.writeVarString(e, JSON.stringify(event));
+        this.send(encoding.toUint8Array(e));
+    }
+    allowTranscript(now = Date.now()) {
+        this.transcripts = (this.transcripts ?? []).filter(t => now - t < TRANSCRIPT_RATE.windowMs);
+        if (this.transcripts.length >= TRANSCRIPT_RATE.perWindow) return false;
+        this.transcripts.push(now);
+        return true;
+    }
     signal(event) {
         const e = encoding.createEncoder();
         encoding.writeVarUint(e, MSG_SIGNAL);
@@ -135,13 +151,13 @@ class Connection {
     close(code, reason) { this.socket.close(code, reason); }
 }
 
-export function createSyncServer({ secret, adminToken = null, dataDir = null, chatRetentionDays = 0, iceServers = null, devAuth = false, maxMessageBytes = 2 * 1024 * 1024, log = () => {} } = {}) {
+export function createSyncServer({ secret, adminToken = null, dataDir = null, chatRetentionDays = 0, transcriptRetentionDays = 0, iceServers = null, devAuth = false, maxMessageBytes = 2 * 1024 * 1024, log = () => {} } = {}) {
     const key = checkSecret(secret, devAuth);
     if (dataDir) mkdirSync(dataDir, { recursive: true });
     const rooms = new Map();
     const connections = new Set();
     const roomFor = id => {
-        if (!rooms.has(id)) rooms.set(id, new Room(id, dataDir, roomId => { rooms.get(roomId)?.destroy(); rooms.delete(roomId); }, log, chatRetentionDays));
+        if (!rooms.has(id)) rooms.set(id, new Room(id, dataDir, roomId => { rooms.get(roomId)?.destroy(); rooms.delete(roomId); }, log, chatRetentionDays, transcriptRetentionDays));
         return rooms.get(id);
     };
 
@@ -225,6 +241,7 @@ export function createSyncServer({ secret, adminToken = null, dataDir = null, ch
         connection.control({ type: 'role', role: connection.role });
         if (iceServers) connection.control({ type: 'ice', iceServers });
         connection.chat({ type: 'history', ...room.chat.page({ limit: CHAT_HISTORY }) });
+        connection.transcript({ type: 'history', ...room.transcript.page({ limit: CHAT_HISTORY }) });
         const states = awarenessProtocol.encodeAwarenessUpdate(room.awareness, [...room.awareness.getStates().keys()]);
         if (room.awareness.getStates().size) {
             const presence = encoding.createEncoder();
@@ -261,6 +278,9 @@ export function createSyncServer({ secret, adminToken = null, dataDir = null, ch
             case MSG_CHAT:
                 onChat(room, connection, JSON.parse(decoding.readVarString(decoder)));
                 return;
+            case MSG_TRANSCRIPT:
+                onTranscript(room, connection, JSON.parse(decoding.readVarString(decoder)));
+                return;
             case MSG_SIGNAL:
                 onSignal(room, connection, decoding.readVarString(decoder));
                 return;
@@ -283,6 +303,31 @@ export function createSyncServer({ secret, adminToken = null, dataDir = null, ch
         const target = [...room.connections].find(other => other.clientIds.has(request.to));
         if (!target || target === connection) return connection.signal({ type: 'error', code: 'gone', ref: request.to ?? null, message: 'Destinatário não está no workspace.' });
         target.signal({ type: 'signal', from: request.from, user: { id: connection.userId, name: connection.claims.name ?? connection.userId }, data: request.data });
+    }
+
+    //Transcript of the call (D-37): each person's own speech, transcribed on THEIR device and sent here. The author is
+    //the token's, never the message's, so nobody can put words in another person's mouth. Same log machinery as the chat
+    //(idempotent by clientId, retention, page), a separate file and its own rate limit. Viewers read; they do not speak.
+    //Request: { type: 'send', clientId, body, startedAt?, language? } | { type: 'history', before?, limit? }
+    function onTranscript(room, connection, request) {
+        const fail = (code, message) => connection.transcript({ type: 'error', ref: request.clientId ?? null, code, message });
+        try {
+            if (request.type === 'history') {
+                connection.transcript({ type: 'history', ...room.transcript.page({ beforeSeq: Number(request.before) || Infinity, limit: Number(request.limit) || CHAT_HISTORY }) });
+                return;
+            }
+            if (request.type !== 'send') return fail('bad_request', 'Pedido de transcrição desconhecido.');
+            if (!CHAT_WRITERS.has(connection.role)) return fail('forbidden', 'Seu papel não permite transcrever.');
+            if (!connection.allowTranscript()) return fail('rate', 'Trechos demais em pouco tempo.');
+            const author = { id: connection.userId, name: connection.claims.name ?? connection.userId };
+            const { message, duplicate } = room.transcript.add(author, { body: request.body, clientId: request.clientId });
+            if (duplicate) connection.transcript({ type: 'segment', segment: message });
+            else room.transcriptBroadcast({ type: 'segment', segment: message });
+        } catch (error) {
+            if (error instanceof ChatError) return fail(error.code, error.message);
+            log(`transcript error in ${room.id}: ${error.message}`);
+            return fail('internal', 'Erro interno na transcrição.');
+        }
     }
 
     //Chat requests. A refused or invalid one answers the SENDER with { type: 'error', ref, code, message } and changes nothing.

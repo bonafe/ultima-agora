@@ -1,6 +1,6 @@
 # 12. Decisões
 
-Decididas em 2026-10-04: **D-02, D-06, D-07, D-23**. Decidida em 2026-10-16: **D-36**.
+Decididas em 2026-10-04: **D-02, D-06, D-07, D-23**. Decididas em 2026-10-16: **D-36, D-37**.
 
 Cada item traz **recomendação** da especificação. As marcadas com ★ bloqueiam M0/M1.
 
@@ -42,3 +42,4 @@ Cada item traz **recomendação** da especificação. As marcadas com ★ bloque
 | **D-34** | Licença | MIT; Apache-2.0; igual ao UltimaJS | Alinhar à licença do UltimaJS (`LICENSE` do `ultima`) |
 | **D-35** | Localização dos ADRs do Agora | Neste repositório; no IA | ADRs do Agora **aqui** (`docs/decisoes/`); ADRs de integração no IA |
 | **D-36** ✅ | Provider de conferência inicial | LiveKit (SFU) já; WebRTC em malha (P2P) primeiro | **DECIDIDO:** `MeshProvider` com `RTCPeerConnection` nativo e sinalização pelo `agora-sync`, atrás do `ConferenceProvider`; LiveKit entra depois pelo mesmo contrato quando os grupos crescerem. Tela compartilhada: segunda etapa |
+| **D-37** ✅ | Motor da transcrição da chamada | Web Speech API (nuvem do navegador); Whisper no navegador; STT no servidor (faster-whisper) | **DECIDIDO:** Whisper no navegador (transformers.js + ONNX Runtime Web, CPU/WASM), vendorizado em `vendor/whisper/`; pesos em `models/` servidos pela própria origem. Cada pessoa é transcrita no próprio dispositivo e só o texto vai ao workspace (6.2.1). STT no servidor fica como provider futuro, atrás do mesmo contrato |

@@ -34,6 +34,7 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 - Run the app: serve the root and open `/` (hash route `#/workspace/<id>`).
 - `tests/` — zero-dependency browser tests, same runner shape as UltimaJS.
 - `conference/` — `ConferenceProvider`/`ConferenceRoom` contract and `mesh/` (`MeshProvider`: browser-native WebRTC in a full mesh, signalling relayed by `agora-sync`, D-36). Only providers touch `RTCPeerConnection`.
+- `transcription/` — `Transcriber` (the person's switch) and `whisper/` (`WhisperProvider`, worker, audio worklet, `speech.js`): Whisper runs IN the browser (D-37); `vendor/whisper/` is the runtime, `models/` the weights (outside git: `tools/baixar_modelo_whisper.py`). Only `transcription/whisper/` imports `vendor/whisper`.
 
 Planned (see spec 55): `core/events`.
 

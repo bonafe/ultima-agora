@@ -20,7 +20,7 @@ DEBUG_PORT="${DEBUG_PORT:-9334}"
 PROFILE=$(mktemp -d)
 python3 -m http.server "$PORT" >/dev/null 2>&1 &
 SERVER=$!
-"$CHROME" --headless=new --no-sandbox --disable-gpu --user-data-dir="$PROFILE" \
+"$CHROME" --headless=new --no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required --user-data-dir="$PROFILE" \
     --remote-debugging-port="$DEBUG_PORT" "http://localhost:$PORT/tests/" >/dev/null 2>&1 &
 BROWSER=$!
 trap 'kill $SERVER $BROWSER 2>/dev/null; rm -rf "$PROFILE"' EXIT

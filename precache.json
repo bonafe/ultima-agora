@@ -1,5 +1,5 @@
 {
- "version": "7f661415899c779a",
+ "version": "63f161b85c5bf5b2",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -9,6 +9,7 @@
   "collaboration/providers/chat_client.js",
   "collaboration/providers/indexeddb_persistence.js",
   "collaboration/providers/sync_provider.js",
+  "collaboration/providers/transcript_client.js",
   "collaboration/providers/yjs_store.js",
   "components/catalog.js",
   "components/chat/ultima-chat.css",
@@ -36,6 +37,13 @@
   "components/text/ultima-text.html",
   "components/text/ultima-text.js",
   "components/text/ultima-text.manifest.json",
+  "components/transcript/ultima-transcript.css",
+  "components/transcript/ultima-transcript.html",
+  "components/transcript/ultima-transcript.js",
+  "components/transcript/ultima-transcript.manifest.json",
+  "conference/conference_provider.js",
+  "conference/mesh/mesh_provider.js",
+  "conference/mesh/voice_meter.js",
   "core/components/agora_component.js",
   "core/components/mix.js",
   "core/connections/bus.js",
@@ -47,6 +55,11 @@
   "core/workspace/layout.js",
   "core/workspace/workspace.js",
   "index.html",
+  "transcription/transcriber.js",
+  "transcription/whisper/pcm_worklet.js",
+  "transcription/whisper/speech.js",
+  "transcription/whisper/whisper_provider.js",
+  "transcription/whisper/whisper_worker.js",
   "ui/dom.js",
   "ui/inspector/agora-inspector.css",
   "ui/inspector/agora-inspector.html",
@@ -67,6 +80,8 @@
   "vendor/ultima/controller_base.js",
   "vendor/ultima/mixins.js",
   "vendor/ultima/reactive_component.js",
+  "vendor/whisper/ort-wasm-simd-threaded.mjs",
+  "vendor/whisper/transformers.min.js",
   "vendor/yjs/yjs.js"
  ]
 }

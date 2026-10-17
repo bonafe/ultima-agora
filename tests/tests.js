@@ -4,7 +4,7 @@ import { AgoraComponent } from '../core/components/agora_component.js';
 import { validateManifest, validateConfig } from '../core/registry/manifest.js';
 import { ComponentRegistry } from '../core/registry/component_registry.js';
 import { MemoryStateStore } from '../collaboration/document/memory_state_store.js';
-import { Layout } from '../core/workspace/layout.js';
+import { flattenTree, Layout } from '../core/workspace/layout.js';
 import { Workspace } from '../core/workspace/workspace.js';
 import { applyTemplate } from '../core/workspace/templates.js';
 import { WELCOME } from '../ui/welcome/welcome_template.js';
@@ -31,6 +31,7 @@ import { MemoryBackend } from '../collaboration/providers/indexeddb_persistence.
 import { renderMarkdown } from '../components/markdown/markdown.js';
 import { registerCoreComponents } from '../components/catalog.js';
 import '../ui/workspace/agora-workspace.js';
+import { boxSize } from '../core/components/box.js';
 import '../ui/inspector/agora-inspector.js';
 import '../ui/palette/agora-palette.js';
 import '../ui/settings/agora-settings.js';
@@ -405,6 +406,29 @@ test('layout: the only window of the workspace dropped on the workspace edge cha
     assert(shape(layout) === '[a]');
 });
 
+test('bus: onDelivery tells who received a value, and stops when unsubscribed', async () => {
+    const { bus, live } = await busWorkspace();
+    const source = live('test-source'), sink = live('test-sink');
+    bus.connect({ instance: source.id, port: 'text' }, { instance: sink.id, port: 'text' });
+    const seen = [];
+    const stop = bus.onDelivery((id, port) => seen.push(`${id === sink.id ? 'sink' : id}.${port}`));
+    bus.publish(source.id, 'text', 'um');
+    await flush();
+    stop();
+    bus.publish(source.id, 'text', 'dois');
+    await flush();
+    assert(seen.join() === 'sink.text', seen.join());
+});
+
+test('layout: flattenTree lists the instances in reading order, tabs in their order', async () => {
+    const layout = new Layout(await openDoc());
+    const first = layout.place('a'); layout.place('b');
+    const right = layout.place('c', { panelId: first, side: 'right' });
+    layout.place('d', { panelId: right, side: 'bottom' });
+    assert(flattenTree(layout.tree()).join() === 'a,b,c,d', flattenTree(layout.tree()).join());
+    assert(flattenTree(null).length === 0);
+});
+
 // --- workspace controller ---
 
 const widgetManifest = { name: 'test-widget', tag: 'test-widget', title: 'Widget', version: '1.2.0', module: './w.js', config: { size: { type: 'integer', default: 1, min: 1, max: 3 } } };
@@ -585,13 +609,13 @@ test('markdown code blocks keep their content literal', () => {
 
 // --- shell parts: workspace view, inspector, palette ---
 
-const mountView = async () => {
+const mountView = async ({ width = 760 } = {}) => {
     const registry = new ComponentRegistry();
     await registerCoreComponents(registry);
     const doc = await openDoc();
     const workspace = new Workspace({ doc, registry, user: { id: 'urn:user:t' } });
     const view = document.createElement('agora-workspace');
-    view.style.cssText = 'display:block;width:600px;height:300px';
+    view.style.cssText = `display:block;width:${width}px;height:300px`;
     document.body.append(view);
     assert(await settleOrTimeout(view.whenLoaded()), 'view never loaded');
     view.workspace = workspace;
@@ -709,6 +733,25 @@ test('view: floating a window moves the SAME element to a floating frame; the ta
     view.dock(b);
     await wait(100);
     assert(view.rootNode.querySelector('.tabpanel:not([hidden])').contains(instanceElement(view, b)) && !view.rootNode.querySelector('#floats .float') && !view.isDetached(b));
+});
+
+test('view: a floating window resizes from all four corners, the opposite corner staying put', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    view.float(b, { x: 150, y: 40, w: 400, h: 220 });
+    await wait(100);
+    const frame = view.rootNode.querySelector('#floats .float');
+    const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, button: 0, clientX: x, clientY: y }));
+    for (const corner of ['nw', 'ne', 'sw', 'se']) {
+        const before = frame.getBoundingClientRect(), handle = frame.querySelector(`.float-handle.${corner}`);
+        assert(handle, `no ${corner} handle`);
+        const west = corner.includes('w'), north = corner.includes('n');
+        const x0 = west ? before.left : before.right, y0 = north ? before.top : before.bottom;
+        fire(handle, 'pointerdown', x0, y0); fire(handle, 'pointermove', x0 + (west ? 20 : 30), y0 + (north ? 10 : 25)); fire(handle, 'pointerup', x0, y0);
+        const after = frame.getBoundingClientRect();
+        assert(Math.abs(after.width - (before.width + (west ? -20 : 30))) < 2 && Math.abs(after.height - (before.height + (north ? -10 : 25))) < 2, `${corner}: size`);
+        assert(Math.abs((west ? after.right : after.left) - (west ? before.right : before.left)) < 2 && Math.abs((north ? after.bottom : after.top) - (north ? before.bottom : before.top)) < 2, `${corner}: opposite corner moved`);
+    }
 });
 
 test('view: closing an instance that is floating removes its frame', async () => {
@@ -902,6 +945,111 @@ test('call window: one window per person while I am in the call, composed with t
     assert(people().length === 1 && !view.rootNode.querySelector('#floats .float'), `whoever leaves loses their window (${people().length} ${!!view.rootNode.querySelector('#floats .float')})`);
     element.dispose(); element.remove();
     ana.room.destroy(); bia.room.destroy();
+});
+
+test('compact: a narrow workspace shows ONE window at a time with a bar; the same elements, not recreated, come back when it widens', async () => {
+    const { view, workspace } = await mountView({ width: 760 });
+    const { a, b } = await addTwo(view, workspace);
+    const text = instanceElement(view, a), notes = instanceElement(view, b);
+    text.onDispose = notes.onDispose = () => { throw new Error('disposed by a change of presentation'); };
+    assert(!view.compact && !view.rootNode.querySelector('.compact-bar'), 'wide: the docking presentation');
+
+    view.style.width = '390px';
+    assert(await untilTrue(() => view.compact && view.rootNode.querySelector('.compact-bar')), 'narrow: compact');
+    await wait(100);
+    const visible = () => [...view.rootNode.querySelectorAll('.compact-stage > .tabpanel')].filter(p => !p.hidden).map(p => p.dataset.id);
+    assert(visible().join() === b, `the newest window is the one shown (${visible()})`);
+    assert(instanceElement(view, a) === text && instanceElement(view, b) === notes, 'the live elements were moved, not recreated');
+    assert(view.rootNode.querySelectorAll('.compact-tab').length === 2 && view.rootNode.querySelector('.compact-tab[aria-selected="true"]').dataset.id === b);
+
+    notes.dataset.mark = 'kept';
+    view.rootNode.querySelector(`.compact-tab[data-id="${a}"]`).click();
+    assert(visible().join() === a && instanceElement(view, b) === notes && notes.dataset.mark === 'kept', 'switching only flips what is visible');
+    assert(view.selectedId === a, 'and tells the inspector');
+
+    view.style.width = '760px';
+    assert(await untilTrue(() => !view.compact && view.rootNode.querySelector('.panel')), 'wide again');
+    await wait(100);
+    assert(instanceElement(view, a) === text && instanceElement(view, b) === notes && view.rootNode.querySelectorAll('.panel').length === 1);
+    view.remove();
+});
+
+test('compact: a floating window is shown in the list while narrow and floats again when wide; the document is never touched', async () => {
+    const { view, workspace } = await mountView({ width: 760 });
+    const { b } = await addTwo(view, workspace);
+    view.float(b);
+    await wait(100);
+    const before = JSON.stringify(workspace.doc.get('layout'));
+    view.style.width = '390px';
+    assert(await untilTrue(() => view.compact));
+    await wait(100);
+    const notes = instanceElement(view, b);
+    assert(view.rootNode.querySelector('.compact-stage').contains(notes), 'in the list while narrow');
+    view.style.width = '760px';
+    assert(await untilTrue(() => !view.compact && view.rootNode.querySelector('#floats .float')?.contains(instanceElement(view, b))), 'floating again');
+    assert(JSON.stringify(workspace.doc.get('layout')) === before);
+    view.remove();
+});
+
+test('compact: the sheet lists every window and renames, closes and asks to add; a viewer cannot change anything', async () => {
+    const { view, workspace } = await mountView({ width: 390 });
+    const { a, b } = await addTwo(view, workspace);
+    let addAsked = 0;
+    view.addEventListener('compact-add', () => addAsked++);
+    assert(await untilTrue(() => view.compact && view.rootNode.querySelector('.compact-more')));
+    view.rootNode.querySelector('.compact-more').click();
+    await wait(50);
+    const sheet = () => view.rootNode.querySelector('.sheet');
+    assert(sheet() && sheet().querySelectorAll('li').length === 2, 'the list of all windows');
+
+    sheet().querySelector('button[aria-label^="Renomear"]').click();
+    await wait(50);
+    const input = sheet().querySelector('input.rename');
+    input.value = 'Minha anotação';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await wait(100);
+    assert(workspace.instances().some(i => i.label === 'Minha anotação'), 'renamed in the document');
+
+    view.rootNode.querySelector('.compact-more').click();
+    await wait(50);
+    sheet().querySelector('.add').click();
+    await wait(50);
+    assert(addAsked === 1 && !sheet(), 'asks the shell for the palette and closes');
+
+    view.rootNode.querySelector('.compact-more').click();
+    await wait(50);
+    sheet().querySelector('button[aria-label^="Fechar "]:not([aria-label="Fechar lista"])').click();
+    await wait(100);
+    assert(workspace.instances().length === 1);
+
+    workspace.doc.role = 'viewer';
+    view.rootNode.querySelector('.compact-more').click();
+    await wait(100);
+    assert(!sheet()?.querySelector('.add') && !sheet()?.querySelector('button[aria-label^="Renomear"]'), 'read-only: no rename, close or add');
+    view.remove();
+});
+
+test('compact: a window that receives a value while hidden gets a dot, cleared when looked at; windows never seen get none', async () => {
+    const { view, workspace } = await mountView({ width: 390 });
+    const table = workspace.addInstance('ultima-table');
+    await wait(300);
+    const graph = workspace.addInstance('ultima-graph');
+    await wait(300);
+    assert(await untilTrue(() => view.compact && view.rootNode.querySelector('.compact-tab')));
+    const dot = id => !!view.rootNode.querySelector(`.compact-tab[data-id="${id}"] .activity`);
+    workspace.bus.connect({ instance: table, port: 'graph' }, { instance: graph, port: 'graph' });
+    workspace.bus.publish(table, 'graph', { nodes: [{ id: 'a', label: 'A' }], edges: [] });
+    await wait(150);
+    assert(!dot(table) && !dot(graph), 'the graph is the one shown; the table was never looked at');
+    view.showWindow(table);
+    view.showWindow(graph);                                 //both seen; the graph is now shown
+    view.showWindow(table);                                 //the graph is hidden
+    workspace.bus.publish(table, 'graph', { nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [] });
+    await wait(150);
+    assert(dot(graph), 'news in a hidden window');
+    view.showWindow(graph);
+    assert(!dot(graph), 'looking clears it');
+    view.remove();
 });
 
 test('view: an unknown component type is kept as a notice and its config is preserved', async () => {
@@ -1208,6 +1356,52 @@ test('chat in the shell: the drawer button counts unread messages, colours menti
     await wait(60);
     assert(!root.querySelector('#chat-pane').hasAttribute('hidden') && root.querySelector('#chat-pane ultima-chat'));
     assert(chat.unread === 0 && badge.hidden && !document.title.startsWith('('), 'opened: read, badge gone');
+    shell.remove();
+    history.replaceState(null, '', location.pathname + savedHash);
+    await host.destroy();
+});
+
+test('shell on a small screen: panes are sheets one at a time with a scrim, the secondary buttons hide behind the menu, and it all comes back when wide', async () => {
+    const host = new DevHost({ dbName: `agora-test-${uuid()}` });
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const shell = document.createElement('agora-shell');
+    shell.style.cssText = 'display:block;width:390px;height:600px';
+    const savedHash = location.hash;
+    document.body.append(shell);
+    assert(await settleOrTimeout(shell.whenLoaded()));
+    await shell.init({ host, registry });
+    await wait(300);
+    const root = shell.shadowRoot;
+    const shown = selector => getComputedStyle(root.querySelector(selector)).display !== 'none';
+    assert(await untilTrue(() => shell.hasAttribute('compact')), 'narrow: compact');
+    assert(root.querySelector('agora-workspace').compact, 'and so is the workspace, by its own width');
+    assert(root.querySelector('#palette-pane').hidden && root.querySelector('#inspector-pane').hidden && root.querySelector('#scrim').hidden, 'no pane covers the work');
+    assert(!shown('#new') && shown('#menu') && shown('#title'), 'only the essentials, and the menu');
+
+    root.querySelector('#menu').click();
+    await wait(30);
+    assert(shown('#new') && root.querySelector('#menu').getAttribute('aria-expanded') === 'true', 'the menu brings the rest');
+    root.querySelector('#menu').click();
+
+    root.querySelector('#toggle-palette').click();
+    assert(!root.querySelector('#palette-pane').hidden && !root.querySelector('#scrim').hidden, 'a sheet and the scrim');
+    root.querySelector('#toggle-inspector').click();
+    assert(root.querySelector('#palette-pane').hidden && !root.querySelector('#inspector-pane').hidden, 'one sheet at a time');
+    assert(root.querySelector('#toggle-palette').getAttribute('aria-pressed') === 'false');
+    root.querySelector('#scrim').click();
+    assert(root.querySelector('#inspector-pane').hidden && root.querySelector('#scrim').hidden, 'the scrim closes it');
+
+    root.querySelector('agora-workspace').dispatchEvent(new CustomEvent('compact-add', { bubbles: true, composed: true }));
+    assert(!root.querySelector('#palette-pane').hidden, '"add" in the window list opens the palette');
+    const before = shell.workspace.instances().length;
+    root.querySelector('agora-palette').dispatchEvent(new CustomEvent('palette-add', { bubbles: true, composed: true, detail: { type: 'ultima-text' } }));
+    await wait(100);
+    assert(shell.workspace.instances().length === before + 1 && root.querySelector('#palette-pane').hidden, 'adding closes the sheet: back to the work');
+
+    shell.style.width = '1100px';
+    assert(await untilTrue(() => !shell.hasAttribute('compact')), 'wide again');
+    assert(!root.querySelector('#palette-pane').hidden && !root.querySelector('#inspector-pane').hidden && root.querySelector('#scrim').hidden && shown('#new'), 'the desktop layout is back');
     shell.remove();
     history.replaceState(null, '', location.pathname + savedHash);
     await host.destroy();
@@ -2404,6 +2598,27 @@ test('transcriber: errors are explained, the language is remembered, a viewer ca
     const viewer = new Transcriber({ engine: fakeCall().engine, client: new TranscriptClient({ me: { id: 'v', name: 'V' }, canWrite: () => false }), room: fakeCall().room, storage: memoryStorage() });
     await viewer.enable();
     assert(viewer.state === 'off' && /papel/.test(viewer.error));
+});
+
+test('components are containers of their own contents: data-box follows the width of the box they are in', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    await registry.load('ultima-text');
+    const holder = document.createElement('div');
+    holder.style.cssText = 'width:300px;height:120px';
+    document.body.append(holder);
+    const element = document.createElement('ultima-text');
+    element.attach({ instanceId: 'box', manifest: registry.getManifest('ultima-text'), config: { text: 'oi' }, services: {} });
+    holder.append(element);
+    await element.whenLoaded();
+    assert(getComputedStyle(element).containerType === 'inline-size', `the host is the container (${getComputedStyle(element).containerType})`);
+    assert(await untilTrue(() => element.dataset.box === 'compact'), `300px: ${element.dataset.box}`);
+    holder.style.width = '500px';
+    assert(await untilTrue(() => element.dataset.box === 'regular'), `500px: ${element.dataset.box}`);
+    holder.style.width = '900px';
+    assert(await untilTrue(() => element.dataset.box === 'wide'), `900px: ${element.dataset.box}`);
+    assert(boxSize(419) === 'compact' && boxSize(420) === 'regular' && boxSize(719) === 'regular' && boxSize(720) === 'wide');
+    element.dispose(); holder.remove();
 });
 
 test('conference component: the transcription switch drives the transcriber; captions, the "being transcribed" mark and the transcript list follow', async () => {

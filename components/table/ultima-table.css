@@ -10,3 +10,6 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: color-mix(in srgb, var(--agora-accent, #2a6df4) 10%, transparent); }
 tbody tr[aria-selected="true"] { background: color-mix(in srgb, var(--agora-accent, #2a6df4) 28%, transparent); }
 tr:focus-visible, th:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: -2px; }
+
+/* The box is narrow (a phone, a small panel): denser cells; the table scrolls sideways instead of squeezing the columns */
+@container (max-width: 420px) { table { min-width: max-content; font-size: .82rem; } th, td { padding: .3rem .45rem; } }

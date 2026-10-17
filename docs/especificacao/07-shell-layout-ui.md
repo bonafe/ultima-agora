@@ -66,6 +66,13 @@ LayoutEngine
 - **R-LAY-11.** Soltar: o destaque mostra exatamente o que o soltar fará (aba na posição, dividir o painel, dividir o workspace inteiro pela borda). Soltar na barra de abas insere/reordena. `Esc` cancela o arrasto.
 - **R-LAY-12.** **Janelas pessoais:** além dos componentes do documento, o shell pode ter janelas só da visão da pessoa (a chamada). Flutuam, vão para outra janela do navegador e se escondem como as outras, e **acoplam ao lado de qualquer painel** (aba ou divisão), só na visão da pessoa: a árvore compartilhada é desenhada com a janela pessoal costurada, sem escrever nada no documento (se o painel de onde ela pende some, ela passa a flutuar); esconder as guarda fora da tela e o que elas executam (a chamada) continua. A janela da chamada contém um workspace local e pessoal, com uma janela por pessoa, com o mesmo docking, abas, flutuação e destaque (R-CONF-2).
 
+### Apresentação compacta (celular e janelas estreitas)
+
+- **R-LAY-13.** O workspace escolhe a apresentação pela **largura da própria caixa** (abaixo de 720 px), não pela da tela: uma janela de navegador estreita também fica compacta. Compacto é **outra apresentação do mesmo documento**, nunca outro documento: a árvore de painéis é achatada na ordem de leitura (`flattenTree`) e **uma janela por vez** ocupa a caixa, com uma barra inferior (as 4 primeiras janelas, sempre incluindo a ativa, e "☰" com a lista completa). Qual está ativa é visão local (R-LAY-5). Os elementos vivos são **movidos, nunca recriados** ao trocar de apresentação, e todos continuam montados (as conexões seguem valendo com a janela escondida).
+- **R-LAY-14.** No compacto: janelas flutuantes aparecem na lista (voltam a flutuar quando a caixa alarga); **usar e compor leve**: abrir, ler, escrever, adicionar (a paleta vira folha), renomear e fechar; **dividir e acoplar ficam para caixas largas**. Quem só pode ler não renomeia, fecha nem adiciona.
+- **R-LAY-15.** Uma janela escondida que **recebe valor pelo barramento** (a tabela mudou o que o grafo mostra) ganha um ponto na barra, apagado quando é vista; só janelas já vistas pelo menos uma vez recebem o ponto.
+- **R-LAY-16.** O shell, também pela largura da própria caixa: o cabeçalho mostra só o essencial e o resto fica atrás de "⋯"; paleta, inspetor e chat viram **folhas de baixo, uma por vez**, com um fundo que fecha; adicionar um componente fecha a folha. A **chamada** vira tela cheia ou, minimizada, uma **mini-barra** (quem fala, microfone, câmera, sair) acima da barra de janelas: o áudio não para ao trocar de janela.
+
 ## 7.4 Inspetor
 
 Permite configurar a instância selecionada sem telas administrativas específicas.

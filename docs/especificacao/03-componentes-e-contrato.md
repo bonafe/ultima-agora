@@ -165,6 +165,13 @@ registrada → criada (operação no documento)
 **R-LIFE-2.** Montagem preguiçosa: instâncias fora da viewport/aba ativa podem ser montadas sob demanda, **desde que mantenham as portas de saída consultáveis** (o último valor emitido persiste no barramento, não no componente).
 **R-LIFE-3.** `shadowDom` fica a critério do componente. Componentes que usam bibliotecas que manipulam o DOM global (como editores) podem usar `shadowDom: false`, e o Agora não deve assumir nenhum dos dois.
 
+### 3.6.2 Adaptação ao tamanho da caixa
+
+- **R-ADAPT-1.** O componente **não pergunta o tamanho da tela**: ele responde à largura **da caixa onde está**. O host de todo `AgoraComponent` é um *container* (`container-type: inline-size`) e o CSS do componente usa `@container (max-width: …)`. Assim o mesmo componente serve a painel acoplado, janela flutuante, outra janela do navegador e tela cheia de celular, sem saber qual é.
+- **R-ADAPT-2.** Para a lógica em JS, o host expõe `data-box` = `compact` (< 420 px) | `regular` | `wide` (≥ 720 px) (`core/components/box.js`, mantido por `ResizeObserver`).
+- **R-ADAPT-3.** **Toque** é modalidade de entrada, não tamanho: alvos ≥ 44 px e campos com 16 px (o iOS dá zoom em menos) ficam em `@media (pointer: coarse)`.
+- Consequência para quem hospeda: todo lugar que hospeda um componente dá a ele uma **largura definida** (a contenção de tamanho impede que ela dependa do conteúdo).
+
 ## 3.7 Registro de componentes
 
 ```js

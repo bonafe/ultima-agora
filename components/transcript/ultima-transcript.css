@@ -17,3 +17,8 @@
 mark { background: color-mix(in srgb, #e0a800 40%, transparent); color: inherit; border-radius: .2rem; }
 :focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: 1px; }
 :disabled { opacity: .5; cursor: default; }
+
+/* Touch: bigger targets; 16px inputs so that iOS does not zoom the page when one is focused (input modality, not size, so a media query) */
+@media (pointer: coarse) { button, select { min-height: 2.75rem; } input, textarea, select { font-size: 16px; } }
+
+@container (max-width: 420px) { #log { padding: .5rem; } #bar { padding: .4rem .5rem; } }

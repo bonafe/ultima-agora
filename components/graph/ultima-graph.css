@@ -11,3 +11,5 @@ svg { display: block; width: 100%; height: 100%; }
 .node[aria-pressed="true"] text { font-weight: 700; }
 .node:focus-visible { outline: none; }
 .node:focus-visible circle { stroke-width: 4; }
+
+@container (max-width: 420px) { .node text { font-size: 10px; } .edge-label { display: none; } }

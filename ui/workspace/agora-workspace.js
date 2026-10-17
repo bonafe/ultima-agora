@@ -10,7 +10,10 @@ import { COMPONENT_MIME } from '../palette/agora-palette.js';
 import { dropTargetAt, placement } from './drop_targets.js';
 import { createFloatFrame } from './float_frame.js';
 import { openPopout } from './popout.js';
+import { buildCompactBar, buildSheet } from './compact_bar.js';
+import { flattenTree } from '../../core/workspace/layout.js';
 
+const COMPACT_AT = 720;             //px of the workspace's own width below which it shows one window at a time (R-LAY-13)
 const DRAG_THRESHOLD = 5;           //px before a press on a tab becomes a drag
 const MENU_ITEMS = [['right', 'Dividir à direita'], ['bottom', 'Dividir abaixo'], ['left', 'Dividir à esquerda'], ['top', 'Dividir acima']];
 
@@ -26,6 +29,16 @@ export class AgoraWorkspaceView extends ReactiveComponent {
     #detached = new Map();          //instanceId -> { kind: 'float' | 'window', body, frame?, popout? } (view state, R-LAY-5)
     #personal = new Map();          //id -> { title, element, park, dock }: windows of the shell (the call), not in the document
                                     //dock: null (floating / other window) or { panelId, side, ratio }: shown beside a panel, for this person only
+    #compactAt = COMPACT_AT;
+    #compact = false;               //narrow box: one window at a time (a different presentation of the same document)
+    #compactActive = null;          //the window shown (view state, never in the document)
+    #compactSeen = new Set();       //windows already in the list: a new one becomes the active
+    #viewed = new Set();            //windows looked at at least once: only those get the "news" dot
+    #activity = new Set();          //windows that received a value while hidden
+    #compactRecords = [];
+    #accessory = null;              //an element the shell wants above the bar when compact (the call's mini-bar)
+    #sheet = false;                 //the list of all windows is open
+    #renaming = null;
     #virtual = new Map();           //virtual panel id -> the real panel it hangs from (rebuilt on every paint)
 
     //How a new browser window is opened (tests replace it)
@@ -46,6 +59,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
                 this.#queuePaint();                                         //move/close controls appear or disappear
             }),
             workspace.doc.presence.onPeers(() => this.#paintBadges()),
+            workspace.bus.onDelivery(id => this.#onDelivery(id)),
         ];
         this.#queuePaint();
     }
@@ -62,6 +76,22 @@ export class AgoraWorkspaceView extends ReactiveComponent {
     }
 
     get selectedId() { return this.#selected; }
+    get compact() { return this.#compact; }
+
+    //Something the shell keeps above the bar in the compact presentation (the call's mini-bar); null removes it
+    set compactAccessory(element) { this.#accessory = element; if (this.#compact) this.#queuePaint(); }
+
+    //Width below which this view shows one window at a time; 0 = never (a view of people in a call wants them all visible)
+    get compactAt() { return this.#compactAt; }
+    set compactAt(width) { this.#compactAt = width; if (this.loaded) this.#checkCompact(); }
+
+    #checkCompact() {
+        const compact = this.clientWidth > 0 && this.clientWidth < this.#compactAt;
+        if (compact === this.#compact) return;
+        this.#compact = compact;
+        this.toggleAttribute('compact', compact);
+        this.#queuePaint();
+    }
 
     select(id) {
         if (this.#selected === id) return;
@@ -76,6 +106,8 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         super.onLoad();
         this.#wireComponentDrops();
         new ResizeObserver(() => this.#detached.forEach(detached => detached.frame?.fit())).observe(this.rootNode.querySelector('#floats'));
+        //The workspace decides how to present itself by the width of its own box, not of the screen: a narrow browser window is as compact as a phone
+        new ResizeObserver(() => this.#checkCompact()).observe(this);
         this.#queuePaint();
     }
 
@@ -126,7 +158,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         if (this.#selected && !live.has(this.#selected)) { this.#selected = null; this.dispatchEvent(new CustomEvent('instance-selected', { detail: { id: null }, bubbles: true, composed: true })); }
 
         const tree = this.#withPersonal(workspace.layout.tree());
-        root.replaceChildren(tree ? this.#buildNode(tree) : this.#emptyState());
+        root.replaceChildren(this.#compact ? this.#buildCompact(tree) : tree ? this.#buildNode(tree) : this.#emptyState());
         for (const [id, detached] of this.#detached) if (!this.#personal.has(id)) detached.frame?.setTitle(workspace.instance(id)?.label ?? '');
 
         this.#paintBadges();
@@ -319,7 +351,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
             this.#create(record, entry);
         }
         entry.tabBody = body;
-        const detached = this.#detached.get(record.id);
+        const detached = this.#awayFrom(record.id);
         if (detached) {
             body.append(this.#placeholder(record, detached));
             if (entry.element && entry.element.parentNode !== detached.body) detached.body.replaceChildren(entry.element);
@@ -372,6 +404,13 @@ export class AgoraWorkspaceView extends ReactiveComponent {
     isDetached(id) { return this.#detached.has(id); }
 
     #notice(message) { this.dispatchEvent(new CustomEvent('view-notice', { detail: { message }, bubbles: true, composed: true })); }
+
+    //Where the element is drawn instead of the panel/stage: a floating window or another browser window. A narrow box
+    //has no room for floating windows, so there they are drawn in the list like any other window.
+    #awayFrom(id) {
+        const detached = this.#detached.get(id);
+        return detached && !(this.#compact && detached.kind === 'float') ? detached : null;
+    }
 
     #placeholder(record, detached) {
         const where = detached.kind === 'float' ? 'numa janela flutuante' : 'em outra janela do navegador';
@@ -466,6 +505,81 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         if (panelId) this.#active.set(panelId, id);
         this.#queuePaint();
         this.select(id);
+    }
+
+    // ---- compact presentation: one window at a time, a bar at the bottom (R-LAY-13) ----
+
+    #buildCompact(tree) {
+        const ids = flattenTree(tree);
+        const records = ids.map(id => this.#record(id)).filter(Boolean);
+        this.#compactRecords = records;
+        if (!records.length) return this.#emptyState();
+
+        const fresh = records.filter(r => !this.#compactSeen.has(r.id));
+        //Coming from the docking presentation: what the person was looking at (the selected window, else the last tab shown)
+        let active = this.#compactActive ?? this.#selected ?? [...this.#active.values()].at(-1);
+        if (this.#compactSeen.size && fresh.length) active = fresh.at(-1).id;
+        if (!records.some(r => r.id === active)) active = records[0].id;
+        this.#compactActive = active;
+        this.#compactSeen = new Set(records.map(r => r.id));
+        this.#viewed.add(active); this.#activity.delete(active);
+
+        const stage = h('div', { class: 'compact-stage' });
+        for (const record of records) {
+            const body = h('div', { class: 'tabpanel', role: 'tabpanel', 'data-id': record.id, hidden: record.id !== active, 'aria-label': record.label });
+            this.#mount(record, body);
+            stage.append(body);
+        }
+        const layer = h('div', { class: 'compact' }, stage, this.#accessory, this.#compactBar());
+        if (this.#sheet) layer.append(this.#compactSheet());
+        if (this.#selected !== active && this.#workspace.instance(active)) queueMicrotask(() => this.select(active));
+        return layer;
+    }
+
+    #compactBar() {
+        return buildCompactBar({
+            records: this.#compactRecords, active: this.#compactActive, activity: this.#activity,
+            onSelect: (id, focus) => { this.showWindow(id); if (focus) queueMicrotask(() => this.rootNode.querySelector(`.compact-tab[data-id="${id}"]`)?.focus()); },
+            onMore: () => { this.#sheet = true; this.#renaming = null; this.#queuePaint(); },
+        });
+    }
+
+    #compactSheet() {
+        const workspace = this.#workspace;
+        const close = () => { this.#sheet = false; this.#renaming = null; this.#queuePaint(); };
+        return buildSheet({
+            records: this.#compactRecords, active: this.#compactActive, activity: this.#activity,
+            canEdit: !workspace.readOnly, renaming: this.#renaming,
+            onSelect: id => { this.#sheet = false; this.showWindow(id); this.#queuePaint(); },
+            onClose: close,
+            onStartRename: id => { this.#renaming = id; this.#queuePaint(); },
+            onRename: (id, label) => { this.#renaming = null; try { workspace.setLabel(id, label); } catch (error) { console.error('[agora-workspace] rename failed:', error); } this.#queuePaint(); },
+            onRemove: id => { try { workspace.removeInstance(id); } catch (error) { console.error('[agora-workspace] close failed:', error); } },
+            onAdd: () => { this.#sheet = false; this.#queuePaint(); this.dispatchEvent(new CustomEvent('compact-add', { bubbles: true, composed: true })); },
+        });
+    }
+
+    //Shows one window in the compact presentation. Only flips what is visible: nothing is rebuilt, so what the person
+    //is typing in the others is not disturbed.
+    showWindow(id) {
+        if (!this.#compact || !this.#compactRecords.some(r => r.id === id)) return;
+        this.#compactActive = id;
+        this.#viewed.add(id); this.#activity.delete(id);
+        for (const body of this.rootNode.querySelectorAll('.compact-stage > .tabpanel')) body.hidden = body.dataset.id !== id;
+        this.#refreshBar();
+        if (this.#workspace.instance(id)) this.select(id);
+    }
+
+    #refreshBar() {
+        const bar = this.rootNode.querySelector('.compact-bar');
+        if (bar) bar.replaceWith(this.#compactBar());
+    }
+
+    //News in a window the person is not looking at (a connected table changed what a graph shows): a dot, not a repaint
+    #onDelivery(id) {
+        if (!this.#compact || id === this.#compactActive || !this.#viewed.has(id) || this.#activity.has(id)) return;
+        this.#activity.add(id);
+        this.#refreshBar();
     }
 
     // ---- personal windows: a window of the shell (the call) that is not in the document ----

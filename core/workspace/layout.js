@@ -13,6 +13,13 @@ const MIN_RATIO = 0.1;
 import { uuid } from '../ids.js';
 const newId = () => `p-${uuid().slice(0, 8)}`;
 
+//The instances of a tree in reading order (depth first, first child first, tabs in their order). It is the list that a
+//small screen shows one window at a time: the same document, another presentation (R-LAY-6).
+export function flattenTree(node) {
+    if (!node) return [];
+    return node.kind === 'split' ? node.children.flatMap(flattenTree) : [...node.tabs];
+}
+
 export class Layout {
     #doc;
     constructor(doc) { this.#doc = doc; }

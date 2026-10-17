@@ -2,22 +2,23 @@
 <header>
     <strong class="brand">Ultima Agora</strong>
     <label class="title"><span class="sr-only">Título do workspace</span><input id="title" type="text" placeholder="Sem título"></label>
-    <label><span class="sr-only">Workspaces</span><select id="workspaces"></select></label>
-    <button id="new" type="button">Novo</button>
-    <button id="duplicate" type="button">Duplicar</button>
-    <button id="archive" type="button">Arquivar</button>
-    <button id="welcome" type="button" title="Um espaço de exemplo para experimentar">Boas-vindas</button>
-    <span class="spacer"></span>
-    <button id="undo" type="button" aria-label="Desfazer" title="Desfazer (Ctrl+Z)">↶</button>
-    <button id="redo" type="button" aria-label="Refazer" title="Refazer (Ctrl+Shift+Z)">↷</button>
-    <span id="peers" aria-label="Participantes"></span>
-    <span id="role" hidden></span>
-    <span id="status" role="status" aria-live="polite"></span>
+    <label class="secondary"><span class="sr-only">Workspaces</span><select id="workspaces"></select></label>
+    <button id="new" class="secondary" type="button">Novo</button>
+    <button id="duplicate" class="secondary" type="button">Duplicar</button>
+    <button id="archive" class="secondary" type="button">Arquivar</button>
+    <button id="welcome" class="secondary" type="button" title="Um espaço de exemplo para experimentar">Boas-vindas</button>
+    <span class="spacer secondary"></span>
+    <button id="undo" class="secondary" type="button" aria-label="Desfazer" title="Desfazer (Ctrl+Z)">↶</button>
+    <button id="redo" class="secondary" type="button" aria-label="Refazer" title="Refazer (Ctrl+Shift+Z)">↷</button>
+    <span id="peers" class="secondary" aria-label="Participantes"></span>
+    <span id="role" class="secondary" hidden></span>
+    <span id="status" class="secondary" role="status" aria-live="polite"></span>
     <button id="chat-toggle" type="button" aria-pressed="false" aria-label="Chat" title="Chat" hidden>💬<span id="chat-badge" hidden></span></button>
     <button id="call-toggle" type="button" aria-pressed="false" aria-label="Chamada" title="Chamada de áudio e vídeo" hidden>📹<span id="call-badge" hidden></span></button>
+    <button id="menu" type="button" aria-expanded="false" aria-controls="header-more" aria-label="Mais opções" title="Mais opções">⋯</button>
     <button id="settings" type="button" aria-label="Configurações" title="Configurações" aria-haspopup="dialog">⚙</button>
-    <button id="toggle-palette" type="button" aria-pressed="true">Componentes</button>
-    <button id="toggle-inspector" type="button" aria-pressed="true">Inspetor</button>
+    <button id="toggle-palette" class="secondary" type="button" aria-pressed="true">Componentes</button>
+    <button id="toggle-inspector" class="secondary" type="button" aria-pressed="true">Inspetor</button>
 </header>
 <div id="banner" role="alert" hidden></div>
 <agora-settings></agora-settings>
@@ -27,4 +28,9 @@
     <aside id="inspector-pane" aria-label="Inspetor"><agora-inspector></agora-inspector></aside>
     <aside id="chat-pane" aria-label="Chat" hidden></aside>
 </div>
+<button id="scrim" type="button" aria-label="Fechar painel" hidden></button>
 <aside id="call-pane" aria-label="Chamada" hidden></aside>
+<section id="call-full" aria-label="Chamada" hidden>
+    <header><strong>Chamada</strong><button id="call-min" type="button">Minimizar</button></header>
+    <div id="call-full-body"></div>
+</section>

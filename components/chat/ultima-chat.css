@@ -30,3 +30,8 @@
 #composer[hidden] { display: none; }
 :disabled { opacity: .5; cursor: default; }
 :focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: 1px; }
+
+/* Touch: bigger targets; 16px inputs so that iOS does not zoom the page when one is focused (input modality, not size, so a media query) */
+@media (pointer: coarse) { button, select { min-height: 2.75rem; } input, textarea, select { font-size: 16px; } }
+
+@container (max-width: 420px) { #log { padding: .5rem; } #composer { padding: .5rem; } .message header { flex-wrap: wrap; row-gap: 0; } }

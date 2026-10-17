@@ -29,6 +29,7 @@ export class AgoraCall extends ReactiveComponent {
         const room = this.#room = parent.conference;
         const view = this.rootNode.querySelector('agora-workspace');
         await view.whenLoaded();
+        view.compactAt = 0;                                       //everybody visible, whatever the width
 
         const local = new ComponentRegistry();
         await Promise.all(LOCAL_COMPONENTS.map(path => local.registerFromUrl(new URL(`../../components/${path}`, import.meta.url))));
@@ -69,7 +70,8 @@ export class AgoraCall extends ReactiveComponent {
             const known = this.#people.get(person.clientId);
             if (known) { if (ws.instance(known)?.label !== person.user.name) ws.setLabel(known, person.user.name); continue; }
             const last = [...this.#people.values()].at(-1);
-            const target = last ? { panelId: ws.layout.findPanelOf(last), side: this.#people.size % 2 ? 'right' : 'bottom' } : {};
+            const narrow = this.clientWidth > 0 && this.clientWidth < 520;                      //a phone: stack them, columns would be slivers
+            const target = last ? { panelId: ws.layout.findPanelOf(last), side: narrow || !(this.#people.size % 2) ? 'bottom' : 'right' } : {};
             this.#people.set(person.clientId, ws.addInstance(PERSON, { config: { clientId: String(person.clientId) }, label: person.user.name, target }));
         }
     }

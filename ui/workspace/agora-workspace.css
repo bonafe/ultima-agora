@@ -39,7 +39,13 @@ button:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-
 .ghost { position: fixed; z-index: 1001; pointer-events: none; padding: .3rem .7rem; border-radius: .4rem; background: var(--agora-surface, #fff); color: var(--agora-text, inherit); border: 1px solid var(--agora-accent, #2a6df4); box-shadow: 0 6px 20px rgb(0 0 0 / .3); font-weight: 600; white-space: nowrap; transform: translate(10px, 10px); }
 .ghost small { display: block; font-weight: 400; opacity: .75; }
 #floats { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.float { position: absolute; display: flex; flex-direction: column; pointer-events: auto; min-width: 240px; min-height: 160px; box-sizing: border-box; resize: both; overflow: hidden; background: var(--agora-surface, #fff); border: 1px solid var(--agora-border, #ccc); border-radius: .5rem; box-shadow: 0 .5rem 1.6rem rgb(0 0 0 / .3); }
+.float { position: absolute; display: flex; flex-direction: column; pointer-events: auto; min-width: 240px; min-height: 160px; box-sizing: border-box; overflow: hidden; background: var(--agora-surface, #fff); border: 1px solid var(--agora-border, #ccc); border-radius: .5rem; box-shadow: 0 .5rem 1.6rem rgb(0 0 0 / .3); }
+.float-handle { position: absolute; width: 16px; height: 16px; z-index: 2; touch-action: none; }
+.float-handle.nw, .float-handle.ne { height: 7px; }   /* thin: the title bar buttons stay clickable */
+.float-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
+.float-handle.se { right: 0; bottom: 0; cursor: nwse-resize; }
+.float-handle.ne { right: 0; top: 0; cursor: nesw-resize; }
+.float-handle.sw { left: 0; bottom: 0; cursor: nesw-resize; }
 .float.moving { box-shadow: 0 .8rem 2.4rem rgb(0 0 0 / .4); }
 .float-bar { display: flex; align-items: center; gap: .4rem; padding: .25rem .4rem .25rem .6rem; background: var(--agora-bg, #f4f5f7); border-bottom: 1px solid var(--agora-border, #ccc); cursor: grab; touch-action: none; user-select: none; }
 .float.moving .float-bar { cursor: grabbing; }
@@ -54,3 +60,30 @@ button:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-
 .detached button { font: inherit; padding: .3rem .8rem; border: 1px solid var(--agora-border, #ccc); border-radius: .3rem; background: var(--agora-surface, #fff); color: inherit; cursor: pointer; }
 .detached button:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: 1px; }
 .tab.is-detached .label::after { content: ' ⧉'; opacity: .6; }
+
+/* Compact presentation: one window at a time and a bar to move between them (R-LAY-13) */
+:host([compact]) #floats { display: none; }
+.compact { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.compact-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--agora-surface, #fff); }
+.compact-stage > .tabpanel { flex: 1; }
+.compact-bar { display: flex; align-items: stretch; background: var(--agora-bg, #f4f5f7); border-top: 1px solid var(--agora-border, #ccc); padding-bottom: env(safe-area-inset-bottom); }
+.compact-tabs { flex: 1; display: flex; min-width: 0; }
+.compact-bar button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; min-height: 3rem; padding: 0 .5rem; }
+.compact-tab { flex: 1 1 0; min-width: 0; position: relative; display: flex; align-items: center; justify-content: center; gap: .3rem; border-top: 3px solid transparent; }
+.compact-tab[aria-selected="true"] { font-weight: 700; border-top-color: var(--agora-accent, #2a6df4); background: var(--agora-surface, #fff); }
+.compact-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compact-more { flex: 0 0 3rem; font-size: 1.2rem; border-left: 1px solid var(--agora-border, #ccc); }
+.activity { width: .55rem; height: .55rem; border-radius: 50%; background: var(--agora-accent, #2a6df4); flex: none; }
+.sheet-layer { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; justify-content: flex-end; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgb(0 0 0 / .4); }
+.sheet { position: relative; max-height: 80%; overflow: auto; background: var(--agora-surface, #fff); border-radius: .8rem .8rem 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .3); padding: .25rem .5rem calc(.75rem + env(safe-area-inset-bottom)); }
+.sheet header { display: flex; align-items: center; justify-content: space-between; padding: .5rem .25rem; }
+.sheet ul { list-style: none; margin: 0; padding: 0; }
+.sheet li { display: flex; align-items: center; gap: .25rem; border-bottom: 1px solid var(--agora-border, #ccc); }
+.sheet li.current .pick { font-weight: 700; }
+.sheet button { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; min-height: 2.75rem; min-width: 2.75rem; }
+.sheet .pick { flex: 1; text-align: left; display: flex; align-items: center; gap: .5rem; }
+.sheet .rename { flex: 1; font: inherit; font-size: 16px; min-height: 2.5rem; padding: 0 .5rem; border: 1px solid var(--agora-border, #ccc); border-radius: .3rem; background: transparent; color: inherit; }
+.sheet .add { width: 100%; margin-top: .5rem; border: 1px dashed var(--agora-border, #ccc); border-radius: .4rem; }
+.compact-bar button:focus-visible, .sheet button:focus-visible, .sheet .rename:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: -2px; }
+@media (pointer: coarse) { .tab button, .tabbar > button { min-height: 2.5rem; } }

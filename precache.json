@@ -1,5 +1,5 @@
 {
- "version": "4cab01a659e5f9f1",
+ "version": "0706062e54b317d8",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -51,6 +51,7 @@
   "conference/mesh/mesh_provider.js",
   "conference/mesh/voice_meter.js",
   "core/components/agora_component.js",
+  "core/components/box.js",
   "core/components/mix.js",
   "core/connections/bus.js",
   "core/connections/types.js",
@@ -91,6 +92,7 @@
   "ui/workspace/agora-workspace.css",
   "ui/workspace/agora-workspace.html",
   "ui/workspace/agora-workspace.js",
+  "ui/workspace/compact_bar.js",
   "ui/workspace/drop_targets.js",
   "ui/workspace/float_frame.js",
   "ui/workspace/popout.js",

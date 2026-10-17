@@ -58,7 +58,7 @@ class Person {
         this.doc.presence.setLocal({ user: { id: this.host.identity.id, name: this.name, color: this.host.identity.color, kind: 'human' }, focus: null, activity: null });
         this.workspace = new Workspace({ doc: this.doc, registry: this.registry, user: this.host.identity, id: this.workspaceId });
         this.box = document.createElement('div');
-        this.box.style.cssText = 'width:640px;height:320px;position:relative;margin:4px;display:inline-block;border:1px solid #888';
+        this.box.style.cssText = 'width:760px;height:320px;position:relative;margin:4px;display:inline-block;border:1px solid #888';
         this.view = document.createElement('agora-workspace');
         this.view.style.cssText = 'position:absolute;inset:0';
         this.box.append(this.view);

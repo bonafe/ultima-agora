@@ -34,3 +34,12 @@ button[aria-pressed="true"] { background: var(--agora-accent, #2a6df4); color: #
 .caption { position: absolute; left: 0; right: 0; bottom: 1.35rem; padding: .15rem .4rem; font-size: .76rem; line-height: 1.25; color: #fff; background: rgba(0, 0, 0, .62); max-height: 3.4em; overflow: hidden; }
 .caption:empty { display: none; }
 .label .rec { opacity: .95; }
+
+/* Touch: bigger targets; 16px inputs so that iOS does not zoom the page when one is focused (input modality, not size, so a media query) */
+@media (pointer: coarse) { button, select { min-height: 2.75rem; } input, textarea, select { font-size: 16px; } }
+
+@container (max-width: 420px) {
+    #lobby fieldset { flex-direction: column; gap: .4rem; }
+    #controls button, #transcription button { flex: 1 1 auto; }
+    #tiles { grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); }
+}

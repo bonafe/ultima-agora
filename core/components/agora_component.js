@@ -3,6 +3,7 @@
 //the manifest; a component that did not declare one gets a clear error when it touches it (R-CAP-1).
 import { ReactiveComponent } from '../../vendor/ultima/reactive_component.js';
 import { mix } from './mix.js';
+import { boxSize } from './box.js';
 
 //Services the shell injects through attach(). Each one backs a capability.
 const SERVICE_CAPABILITY = { ports: 'connectable', shared: 'shared-content', presence: 'presence-aware', domain: 'domain-data', chat: 'chat', conference: 'conference', transcript: 'transcript', transcriber: 'transcript' };
@@ -14,6 +15,7 @@ export const AgoraInstance = (Base) => class extends Base {
     #services = {};
     #attached = false;
     #pendingInputs = new Map();     //port -> last value received before onLoad() (R-LIFE-1)
+    #boxWatch = null;
 
     //Called by the shell right after the element is created and before it finishes loading.
     //services: { setConfig(patch), emit(port, value), ports, shared, presence, domain }
@@ -93,8 +95,24 @@ export const AgoraInstance = (Base) => class extends Base {
         try { return fn(); } catch (error) { console.error(`[${this.constructor.name}] error in ${label}:`, error); }
     }
 
+    //The component is the container of its own contents: `@container` rules in its CSS answer to the width of the box it is
+    //in, and `data-box` ("compact" | "regular" | "wide", see box.js) tells the same to code. The host needs a width from its
+    //parent (size containment): every place that hosts a component gives it one.
+    #watchBox() {
+        const root = this.rootNode;
+        if (!root?.host || this.#boxWatch) return;                  //only components with a shadow root
+        const style = document.createElement('style');
+        style.textContent = ':host { container-type: inline-size; }';
+        root.prepend(style);
+        const apply = () => { const box = boxSize(this.clientWidth); if (this.dataset.box !== box) this.dataset.box = box; };
+        this.#boxWatch = new ResizeObserver(apply);
+        this.#boxWatch.observe(this);
+        apply();
+    }
+
     onLoad() {
         super.onLoad();
+        this.#watchBox();
         for (const [port, value] of this.#pendingInputs) this.#safely(() => this.onInput(port, value), `onInput("${port}")`);
         this.#pendingInputs.clear();
     }
@@ -102,6 +120,8 @@ export const AgoraInstance = (Base) => class extends Base {
     //Called by the shell when the instance is removed for good. Not tied to disconnectedCallback: moving an
     //element between panels disconnects it too, and that must not look like a removal.
     dispose() {
+        this.#boxWatch?.disconnect();
+        this.#boxWatch = null;
         this.#safely(() => this.onDispose(), 'onDispose()');
     }
 

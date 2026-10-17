@@ -17,7 +17,8 @@ export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise
         onHide ? h('button', { type: 'button', class: 'float-btn', title: 'Esconder (continua em segundo plano)', 'aria-label': 'Esconder', onClick: () => onHide() }, '–') : null,
     );
     const body = h('div', { class: 'float-body' });
-    const element = h('div', { class: 'float', role: 'dialog', 'aria-label': title }, bar, body);
+    const corners = ['nw', 'ne', 'sw', 'se'].map(corner => h('div', { class: `float-handle ${corner}`, 'data-corner': corner, 'aria-hidden': 'true' }));
+    const element = h('div', { class: 'float', role: 'dialog', 'aria-label': title }, bar, body, ...corners);
 
     const clamp = () => {
         const bounds = layer.getBoundingClientRect();
@@ -53,7 +54,33 @@ export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise
     });
     element.addEventListener('pointerdown', raise, true);
 
-    //The native resize handle (CSS) changes the size: remember it
+    //Resizing from any corner: the opposite corner stays where it is
+    for (const handle of corners) {
+        const west = handle.dataset.corner.includes('w'), north = handle.dataset.corner.includes('n');
+        handle.addEventListener('pointerdown', event => {
+            if (event.button !== 0) return;
+            event.preventDefault(); event.stopPropagation();
+            raise();
+            try { handle.setPointerCapture(event.pointerId); } catch { /* not an active pointer (synthetic): the listeners still work */ }
+            element.classList.add('moving');
+            const start = { ...state, px: event.clientX, py: event.clientY };
+            const move = e => {
+                const dx = e.clientX - start.px, dy = e.clientY - start.py;
+                state.w = Math.max(MIN_W, start.w + (west ? -dx : dx));
+                state.h = Math.max(MIN_H, start.h + (north ? -dy : dy));
+                if (west) state.x = start.x + start.w - state.w;
+                if (north) state.y = start.y + start.h - state.h;
+                apply();
+            };
+            const up = () => {
+                element.classList.remove('moving');
+                handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up);
+            };
+            handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up); handle.addEventListener('pointercancel', up);
+        });
+    }
+
+    //Keep the remembered size in step with the element
     const observer = new ResizeObserver(() => {
         if (!element.isConnected) return;
         state.w = element.offsetWidth; state.h = element.offsetHeight;

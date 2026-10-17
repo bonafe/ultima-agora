@@ -49,3 +49,4 @@ Saída (o que o componente **chama**): `this.emit(porta, valor)`, `this.setConfi
 3. Valores que atravessam portas são JSON e pequenos; dados volumosos viajam como referência (`Ref`).
 4. Elementos SVG não têm a propriedade `hidden`: use `toggleAttribute('hidden')`.
 5. Não repintar a árvore inteira ao receber `onInput` quando houver foco em campo de texto do componente.
+6. **Adapte-se à caixa, não à tela** (spec 3.6.2): o host é um *container* de largura; escreva `@container (max-width: 420px) { … }` no CSS do componente e leia `this.dataset.box` (`compact` | `regular` | `wide`) quando precisar em JS. Alvos de toque e campos de 16 px ficam em `@media (pointer: coarse)`. Quem hospeda um componente lhe dá uma largura definida.

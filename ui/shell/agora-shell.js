@@ -18,6 +18,17 @@ const ROLE_NOTICE = {
     viewer: 'Você tem acesso somente leitura a este workspace.',
 };
 const CALL_WINDOW = 'shell:call';
+const COMPACT_AT = 720;               //px of the shell's own width below which it is a phone-style shell (R-LAY-13)
+//The mini-bar is drawn inside the workspace's shadow root (above its bar), so it brings its own styles
+const MINI_CSS = `.call-mini { display: flex; align-items: center; gap: .25rem; padding: .25rem .5rem; background: color-mix(in srgb, #3aa655 18%, var(--agora-surface, #fff)); border-top: 1px solid #3aa655; color: var(--agora-text, inherit); }
+.call-mini[hidden] { display: none; }
+.call-mini button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--agora-border, #ccc); border-radius: .4rem; min-height: 2.5rem; min-width: 2.5rem; cursor: pointer; }
+.call-mini .mini-info { flex: 1; text-align: left; border: 0; padding: 0 .25rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-mini .mini-btn.off { opacity: .55; }
+.call-mini .mini-btn[data-act="leave"] { border-color: #d9381e; }
+.call-mini button:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: 1px; }
+`;
+const PANES = [['#palette-pane', '#toggle-palette'], ['#inspector-pane', '#toggle-inspector'], ['#chat-pane', '#chat-toggle']];
 const hashFor = id => `#/workspace/${id}`;
 const idFromHash = () => /^#\/workspace\/(.+)$/.exec(location.hash)?.[1] ?? null;
 const isTextField = element => element?.matches?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
@@ -32,6 +43,9 @@ export class AgoraShell extends ReactiveComponent {
     #chatElement = null;
     #callElement = null;
     #callRoom = null;
+    #compact = false;
+    #callFull = false;                  //compact: the call fills the screen (else it is a mini-bar, or hidden)
+    #mini = null;
     #baseTitle = 'Ultima Agora';
 
     constructor() {
@@ -96,11 +110,24 @@ export class AgoraShell extends ReactiveComponent {
             on(button, 'click', event => {
                 const hidden = this.#$(pane).toggleAttribute('hidden');
                 event.currentTarget.setAttribute('aria-pressed', String(!hidden));
+                this.#panesChanged(hidden ? null : pane);
             });
         }
+        on('#scrim', 'click', () => this.#closePanes());
+        on('#menu', 'click', event => {
+            const open = this.#$('header').toggleAttribute('data-open');
+            event.currentTarget.setAttribute('aria-expanded', String(open));
+        });
+        on('#call-min', 'click', () => this.#minimizeCall());
+        this.rootNode.addEventListener('compact-add', () => this.#openPane('#palette-pane'));
+        this.#mini = this.#buildMini();
+        new ResizeObserver(() => {
+            const compact = this.clientWidth > 0 && this.clientWidth < COMPACT_AT;
+            if (compact !== this.#compact) this.#setCompact(compact);
+        }).observe(this);
         this.rootNode.addEventListener('palette-add', event => {
             if (!this.#workspace) { this.notify('Nenhum workspace aberto ainda.'); return; }
-            try { this.#workspace.addInstance(event.detail.type); } catch (error) {
+            try { this.#workspace.addInstance(event.detail.type); if (this.#compact) this.#closePanes(); } catch (error) {
                 console.error('[agora-shell] could not add component:', error);
                 this.notify(`Não foi possível adicionar o componente: ${error.message}`);
             }
@@ -250,6 +277,8 @@ export class AgoraShell extends ReactiveComponent {
         this.#callElement?.dispose?.();
         this.#callElement = this.#callRoom = null;
         pane.replaceChildren();
+        this.#callFull = false;
+        this.#$('#call-full').hidden = true;
         this.#$('#call-toggle').setAttribute('aria-pressed', 'false');
         const room = workspace.conference;
         this.#$('#call-toggle').toggleAttribute('hidden', !room);
@@ -267,8 +296,106 @@ export class AgoraShell extends ReactiveComponent {
     #toggleCall() {
         const view = this.#$('agora-workspace');
         if (!this.#callElement) return;
+        if (this.#compact) { if (this.#callFull) this.#minimizeCall(); else this.#expandCall(); return; }
         if (view.isPersonalShown(CALL_WINDOW)) view.hidePersonal(CALL_WINDOW);
         else view.showPersonal(CALL_WINDOW, { title: 'Chamada', element: this.#callElement, park: this.#$('#call-pane') });
+    }
+
+    // ---- small screens: panes are sheets, the call is full screen or a mini-bar above the workspace's bar ----
+
+    #setCompact(compact) {
+        this.#compact = compact;
+        this.toggleAttribute('compact', compact);
+        const view = this.#$('agora-workspace');
+        this.#$('header').removeAttribute('data-open');
+        this.#$('#menu').setAttribute('aria-expanded', 'false');
+        if (compact) {
+            this.#closePanes();
+            if (view.isPersonalShown(CALL_WINDOW)) { view.hidePersonal(CALL_WINDOW); this.#expandCall(); }
+            view.compactAccessory = this.#mini;
+        } else {
+            for (const [pane, button] of PANES.slice(0, 2)) { this.#$(pane).removeAttribute('hidden'); this.#$(button).setAttribute('aria-pressed', 'true'); }
+            this.#panesChanged(null);
+            view.compactAccessory = null;
+            if (this.#callFull) { this.#minimizeCall(); view.showPersonal(CALL_WINDOW, { title: 'Chamada', element: this.#callElement, park: this.#$('#call-pane') }); }
+        }
+        this.#paintMini();
+    }
+
+    //Opens one pane and closes the others: on a small screen a sheet at a time
+    #openPane(pane) {
+        for (const [id, button] of PANES) {
+            this.#$(id).toggleAttribute('hidden', id !== pane);
+            this.#$(button).setAttribute('aria-pressed', String(id === pane));
+        }
+        this.#panesChanged(pane);
+    }
+
+    #closePanes() {
+        for (const [id, button] of PANES) { this.#$(id).setAttribute('hidden', ''); this.#$(button).setAttribute('aria-pressed', 'false'); }
+        this.#panesChanged(null);
+    }
+
+    //`opened`: the pane that was just opened, or null. On a small screen it is the only one, and a scrim closes it.
+    #panesChanged(opened) {
+        if (this.#compact && opened) for (const [id, button] of PANES) if (id !== opened) { this.#$(id).setAttribute('hidden', ''); this.#$(button).setAttribute('aria-pressed', 'false'); }
+        this.#$('#scrim').hidden = !(this.#compact && PANES.some(([id]) => !this.#$(id).hasAttribute('hidden')));
+    }
+
+    #expandCall() {
+        if (!this.#callElement) return;
+        this.#callFull = true;
+        this.#closePanes();
+        this.#$('#call-full-body').append(this.#callElement);
+        this.#$('#call-full').hidden = false;
+        this.#$('#call-toggle').setAttribute('aria-pressed', 'true');
+        this.#paintMini();
+    }
+
+    #minimizeCall() {
+        if (!this.#callFull) return;
+        this.#callFull = false;
+        this.#$('#call-pane').append(this.#callElement);                 //parked: the call goes on
+        this.#$('#call-full').hidden = true;
+        this.#$('#call-toggle').setAttribute('aria-pressed', 'false');
+        this.#paintMini();
+    }
+
+    //The mini-bar: who is talking, mute, camera, leave, back to full screen. Only while I am in the call and it is minimized.
+    #buildMini() {
+        const act = async (what) => {
+            const room = this.#callRoom;
+            if (!room) return;
+            const me = room.participants.find(p => p.self);
+            try {
+                if (what === 'mic') await room.setMic(!me?.mic);
+                else if (what === 'cam') await room.setCam(!me?.cam);
+                else if (what === 'leave') room.leave();
+                else this.#expandCall();
+            } catch (error) { this.notify(error.message, 'warning'); }
+        };
+        const button = (id, label, text) => h('button', { type: 'button', class: 'mini-btn', 'data-act': id, 'aria-label': label, onClick: () => act(id) }, text);
+        return h('div', { class: 'call-mini', role: 'group', 'aria-label': 'Chamada em andamento', hidden: true },
+            h('style', {}, MINI_CSS),
+            h('button', { type: 'button', class: 'mini-info', 'aria-label': 'Abrir a chamada', onClick: () => act('open') }, h('span', { class: 'mini-text', role: 'status' })),
+            button('mic', 'Microfone', '🎤'), button('cam', 'Câmera', '📹'), button('leave', 'Sair da chamada', '📞'));
+    }
+
+    #paintMini() {
+        const mini = this.#mini, room = this.#callRoom;
+        if (!mini) return;
+        const show = this.#compact && !this.#callFull && !!room?.joined;
+        mini.hidden = !show;
+        if (!show) return;
+        const people = room.participants;
+        const me = people.find(p => p.self);
+        const talking = people.filter(p => p.speaking && p.mic && !p.self).map(p => p.user.name);
+        mini.querySelector('.mini-text').textContent = talking.length ? `${talking.join(', ')} falando` : `Chamada · ${people.length} pessoa${people.length === 1 ? '' : 's'}`;
+        for (const [act, on] of [['mic', me?.mic], ['cam', me?.cam]]) {
+            const b = mini.querySelector(`[data-act="${act}"]`);
+            b.setAttribute('aria-pressed', String(!!on));
+            b.classList.toggle('off', !on);
+        }
     }
 
     //Count on the button = people in the call; green border = I am in it
@@ -279,6 +406,7 @@ export class AgoraShell extends ReactiveComponent {
         badge.textContent = String(count);
         badge.toggleAttribute('hidden', count === 0);
         this.#$('#call-toggle').classList.toggle('live', !!room?.joined);
+        this.#paintMini();
         const label = room?.joined ? `Chamada: você está na chamada com ${count} pessoa(s)` : count ? `Chamada: ${count} pessoa(s) na chamada` : 'Chamada de áudio e vídeo';
         this.#$('#call-toggle').setAttribute('aria-label', label);
         this.#$('#call-toggle').title = label;
@@ -289,6 +417,7 @@ export class AgoraShell extends ReactiveComponent {
         const open = pane.hasAttribute('hidden');
         pane.toggleAttribute('hidden', !open);
         this.#$('#chat-toggle').setAttribute('aria-pressed', String(open));
+        this.#panesChanged(open ? '#chat-pane' : null);
         if (open) { this.#workspace?.chat?.markRead(); this.#chatElement?.rootNode.querySelector('#text')?.focus(); }
         this.#paintUnread();
     }

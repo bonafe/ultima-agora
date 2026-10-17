@@ -19,6 +19,7 @@ export class Bus {
     #delivered = new Map();         //"instance.port" of an input -> signature last delivered
     #inputs = new Map();            //"instance.port" of an input -> value last delivered
     #queued = false;
+    #deliveryListeners = new Set();
     #lastStamp = 0;
     #stop;
 
@@ -29,6 +30,9 @@ export class Bus {
 
     get #types() { return this.#workspace.registry.types; }
     dispose() { this.#stop(); }
+
+    //fn(instanceId, port) after a value reaches an input: lets a view tell the person that a window they are not looking at has news
+    onDelivery(fn) { this.#deliveryListeners.add(fn); return () => this.#deliveryListeners.delete(fn); }
 
     // ---- registration of live elements ----
 
@@ -178,6 +182,7 @@ export class Bus {
                 this.#delivered.set(key, next);
                 this.#inputs.set(key, desired);
                 element.deliverInput(port, desired);
+                if (desired !== undefined) for (const fn of this.#deliveryListeners) fn(instanceId, port);
             }
         }
         for (const [key, output] of this.#outputs) if (output.transient) this.#outputs.delete(key);

@@ -1,6 +1,7 @@
 :host {
     --agora-bg: #eef0f4; --agora-surface: #fff; --agora-border: #cdd2da; --agora-text: #1c2430;
     --agora-accent: #2a6df4; --agora-danger: #c0392b;
+    container-type: inline-size;
     display: flex; flex-direction: column; height: 100%; background: var(--agora-bg); color: var(--agora-text); font: 14px/1.4 system-ui, sans-serif;
 }
 :host([data-theme="dark"]) { --agora-bg: #161a22; --agora-surface: #1f2530; --agora-border: #36404f; --agora-text: #e6e9ef; --agora-accent: #6e9bff; --agora-danger: #ff7b6b; }
@@ -47,3 +48,28 @@ agora-workspace { flex: 1; }
 #call-toggle.live { border-color: #3aa655; }
 #call-badge { position: absolute; top: -.35rem; right: -.35rem; min-width: 1.05rem; height: 1.05rem; padding: 0 .2rem; box-sizing: border-box; border-radius: 1rem; background: #3aa655; color: #fff; font-size: .68rem; line-height: 1.05rem; text-align: center; }
 #call-badge[hidden] { display: none; }
+
+/* Small box (a phone, a narrow window): the shell is the container, so this answers to ITS width. One window at a time in the
+   workspace; palette, inspector and chat are sheets from the bottom; the secondary buttons are behind "⋯". */
+#menu, #scrim, #call-full { display: none; }
+#scrim { border: 0; padding: 0; background: rgb(0 0 0 / .4); }
+@container (max-width: 720px) {
+    header { gap: .35rem; padding: .35rem .5rem; flex-wrap: wrap; }
+    header:not([data-open]) .secondary { display: none !important; }      /* !important: ids such as #peers set their own display */
+    header[data-open] .spacer { display: none; }
+    #role[hidden] { display: none !important; }
+    #menu { display: inline-block; }
+    .brand { display: none; }
+    .title { flex: 1; min-width: 0; }
+    .title input { width: 100%; max-width: none; box-sizing: border-box; min-height: 2.5rem; font-size: 16px; }
+    header button, select { min-height: 2.5rem; min-width: 2.5rem; }
+    .body > aside { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; flex: none; max-height: 72dvh; border: 0; border-radius: .8rem .8rem 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .35); padding-bottom: env(safe-area-inset-bottom); }
+    .body > aside[hidden] { display: none !important; }
+    #chat-pane, #inspector-pane, #palette-pane { flex-basis: auto; height: 72dvh; }
+    #scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 35; }
+    #call-full:not([hidden]) { display: flex; flex-direction: column; position: fixed; inset: 0; z-index: 50; background: var(--agora-surface); padding-bottom: env(safe-area-inset-bottom); }
+    #call-full > header { display: flex; align-items: center; justify-content: space-between; padding: .5rem .75rem; border-bottom: 1px solid var(--agora-border); }
+    #call-full-body { flex: 1; min-height: 0; }
+    #call-full-body > * { height: 100%; }
+}
+@media (pointer: coarse) { select, input { font-size: 16px; } }

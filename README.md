@@ -29,7 +29,7 @@ A primeira aplicação de referência é o [Inteligência Aberta](../inteligenci
   por pessoa. Instale o modelo uma vez (fica fora do git, ~80 MB): `tools/baixar_modelo_whisper.py` (`tiny` ~41 MB, `small` ~250 MB).
   O Docker já serve `models/` e liga o isolamento de origem (vários *threads*: ~2× mais rápido). Whisper não faz streaming: a legenda
   aparece uns segundos depois de cada pausa. Retenção do registro: `TRANSCRIPT_RETENTION_DAYS` (0 = guarda tudo).
-- **Site** (`index.html`, `hospedar.html`, `site/`): a página de apresentação da Ágora Digital, com o fundo animado pela rolagem, e o guia de hospedagem para quem não programa. Funciona no GitHub Pages (estático); o espaço de trabalho fica em `app.html`. Decisão D-38.
+- **Site** (`index.html`, `hospedar.html`, `site/`): a página de apresentação da Ágora Digital, com o fundo animado pela rolagem, e o guia de hospedagem para quem não programa. Funciona no GitHub Pages (estático); o espaço de trabalho fica em `app.html`. Decisão D-38. O primeiro acesso ao app abre o **workspace de boas-vindas** (um exemplo funcionando: guia, caderno, tabela ligada a um grafo); o botão *Boas-vindas* traz outro.
 - Próximo: fase 2 (conexões visuais, conferência com LiveKit, quadro, templates, histórico, agentes em modo proposta); e a cifra do armazenamento local (D-17).
 
 ## Testes

@@ -21,6 +21,7 @@ export default class UltimaNotes extends AgoraComponent {
         this.#preview = root.querySelector('#preview');
         this.#editor.value = this.shared.getText();
         this.#applyRole();
+        if (this.config.startInView) this.#setMode('view');                //e.g. a welcome guide: read first, edit when you want
 
         this.#editor.addEventListener('input', () => { this.#scheduleSave(); this.#announceTyping(); });
         this.#editor.addEventListener('blur', () => this.#flush());

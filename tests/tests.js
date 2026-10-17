@@ -6,6 +6,8 @@ import { ComponentRegistry } from '../core/registry/component_registry.js';
 import { MemoryStateStore } from '../collaboration/document/memory_state_store.js';
 import { Layout } from '../core/workspace/layout.js';
 import { Workspace } from '../core/workspace/workspace.js';
+import { applyTemplate } from '../core/workspace/templates.js';
+import { WELCOME } from '../ui/welcome/welcome_template.js';
 import { DevHost } from '../adapters/dev/dev_host.js';
 import { Y, syncProtocol, awarenessProtocol, encoding, decoding } from '../vendor/yjs/yjs.js';
 import { YjsWorkspaceDoc } from '../collaboration/document/yjs_state_store.js';
@@ -950,10 +952,59 @@ test('chat in the shell: the drawer button counts unread messages, colours menti
     assert(badge.textContent === '2' && !badge.hidden, `badge shows ${badge.textContent}`);
     assert(toggle.getAttribute('aria-label').includes('2 mensagem') && toggle.getAttribute('aria-label').includes('mencionando você'), toggle.getAttribute('aria-label'));
     assert(document.title.startsWith('(2)'));
+    for (const pane of ['#chat-pane', '#call-pane']) assert(getComputedStyle(root.querySelector(pane)).display === 'none', `${pane} is really hidden until opened`);
     toggle.click();
     await wait(60);
     assert(!root.querySelector('#chat-pane').hasAttribute('hidden') && root.querySelector('#chat-pane ultima-chat'));
     assert(chat.unread === 0 && badge.hidden && !document.title.startsWith('('), 'opened: read, badge gone');
+    shell.remove();
+    history.replaceState(null, '', location.pathname + savedHash);
+    await host.destroy();
+});
+
+// ---- welcome workspace (D-38) ----
+
+test('templates: a template is applied through the controller, as ONE undo step, and a bad one changes nothing', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const doc = await openDoc();
+    const workspace = new Workspace({ doc, registry, user: { id: 'u' } });
+    const ids = applyTemplate(workspace, WELCOME);
+    assert(workspace.title === WELCOME.title && workspace.instances().length === 4 && ids.size === 4);
+    assert(workspace.layout.findPanelOf(ids.get('guia')) === workspace.layout.findPanelOf(ids.get('caderno')), 'the notebook is a tab beside the guide');
+    assert(workspace.layout.findPanelOf(ids.get('guia')) !== workspace.layout.findPanelOf(ids.get('tabela')), 'the table has its own panel');
+    const [link, ...rest] = workspace.bus.list();
+    assert(!rest.length && link.from.instance === ids.get('tabela') && link.to.instance === ids.get('grafo') && link.to.port === 'graph');
+    assert(workspace.sharedText(ids.get('guia')).getText().startsWith('# Bem-vindo'), 'the guide text is in the shared document');
+    doc.undo();
+    assert(workspace.instances().length === 0 && workspace.bus.list().length === 0, 'one undo removes the whole template');
+    throws(() => applyTemplate(workspace, { title: 'Meio', instances: [{ key: 'x', type: 'nao-existe' }] }), 'not registered');
+    assert(workspace.instances().length === 0 && workspace.title === '', 'nothing half-applied');
+});
+
+test('welcome in the shell: the first visit opens it ready (the table feeds the graph), the button brings a fresh one, a reload makes no extra', async () => {
+    const host = new DevHost({ dbName: `agora-test-${uuid()}` });
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const shell = document.createElement('agora-shell');
+    shell.style.cssText = 'display:block;width:1100px;height:600px';
+    const savedHash = location.hash;
+    location.hash = '';
+    document.body.append(shell);
+    assert(await settleOrTimeout(shell.whenLoaded()));
+    await shell.init({ host, registry });
+    await wait(900);
+    const workspace = shell.workspace;
+    assert(workspace.title === WELCOME.title && workspace.instances().length === 4, 'first visit: the welcome workspace');
+    const view = shell.shadowRoot.querySelector('agora-workspace');
+    const graph = view.shadowRoot.querySelector('ultima-graph');
+    assert(graph.rootNode.querySelectorAll('circle').length >= 6, 'the graph shows what the table emits');
+    const notes = [...view.shadowRoot.querySelectorAll('ultima-notes')].find(n => n.shared.getText().startsWith('# Bem-vindo'));
+    assert(!notes.rootNode.querySelector('#preview').hidden, 'the guide opens for reading');
+    assert((await host.list()).length === 1 && !(await host.get(workspace.id)).seed, 'seeded once');
+    shell.shadowRoot.querySelector('#welcome').click();
+    await wait(900);
+    assert((await host.list()).length === 2 && shell.workspace.id !== workspace.id && shell.workspace.instances().length === 4, 'the button makes another');
     shell.remove();
     history.replaceState(null, '', location.pathname + savedHash);
     await host.destroy();

@@ -2,9 +2,20 @@
   "name": "ultima-notes",
   "tag": "ultima-notes",
   "title": "Notas",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "category": "content",
   "description": "Notas em Markdown do workspace.",
   "module": "./ultima-notes.js",
-  "capabilities": ["shared-content", "presence-aware", "resizable"]
+  "capabilities": [
+    "shared-content",
+    "presence-aware",
+    "resizable"
+  ],
+  "config": {
+    "startInView": {
+      "type": "boolean",
+      "default": false,
+      "title": "Abrir para leitura"
+    }
+  }
 }

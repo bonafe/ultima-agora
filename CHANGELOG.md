@@ -2,6 +2,16 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (welcome workspace)
+
+### Added
+- **Welcome workspace** (D-38): the first visit opens a real, working composition that teaches by being used — a guide to read, a notebook to write in, a table ("who does what") and a graph connected to it, so editing the table redraws the graph. The **Boas-vindas** button brings a fresh one at any time; `?template=boas-vindas` does the same from a link.
+- `core/workspace/templates.js`: a template is data applied through the `Workspace` controller, validated first (nothing half-applied), one undo step, synchronized like manual work. The content lives with the application (`ui/welcome/`), not in the core. `DevHost.create(title, { seed })` / `clearSeed`: the shell fills a seeded workspace once, before showing it.
+- `ultima-notes` 1.2.0: `startInView` config (open for reading).
+
+### Fixed
+- The chat drawer and the call tray were always visible: their `display` rules (by id) beat `aside[hidden]`. Test: both are really hidden until opened.
+
 ## Unreleased (site — Ágora Digital)
 
 ### Added

@@ -100,9 +100,10 @@ export class DevHost {
 
     get(id) { return this.#backend.getWorkspace(id); }
 
-    async create(title = 'Novo workspace') {
+    //seed: the name of a template the shell fills in when it first opens the workspace (see core/workspace/templates.js)
+    async create(title = 'Novo workspace', { seed = null } = {}) {
         const now = new Date().toISOString();
-        const meta = { id: uuid(), title, ownerId: this.identity.id, role: 'owner', createdAt: now, updatedAt: now, archivedAt: null };
+        const meta = { id: uuid(), title, ownerId: this.identity.id, role: 'owner', createdAt: now, updatedAt: now, archivedAt: null, ...(seed ? { seed } : {}) };
         await this.#backend.putWorkspace(meta);
         return meta;
     }
@@ -116,6 +117,7 @@ export class DevHost {
         return meta;
     }
 
+    async clearSeed(id) { const meta = await this.#backend.getWorkspace(id); if (meta?.seed) await this.#backend.putWorkspace({ ...meta, seed: null }); }
     async rename(id, title) { return this.#update(id, { title }); }
     async touch(id) { return this.#update(id, {}); }
     async archive(id) { return this.#update(id, { archivedAt: new Date().toISOString() }); }

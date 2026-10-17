@@ -2,6 +2,8 @@
 //Everything it knows about the outside world comes from the host (identity, catalog, store) and the registry.
 import { ReactiveComponent } from '../../vendor/ultima/reactive_component.js';
 import { Workspace } from '../../core/workspace/workspace.js';
+import { applyTemplate } from '../../core/workspace/templates.js';
+import { WELCOME, WELCOME_TEMPLATE_NAME } from '../welcome/welcome_template.js';
 import { h } from '../dom.js';
 import '../palette/agora-palette.js';
 import '../workspace/agora-workspace.js';
@@ -65,6 +67,8 @@ export class AgoraShell extends ReactiveComponent {
     #wire() {
         const on = (selector, event, fn) => this.#$(selector).addEventListener(event, fn);
         on('#new', 'click', async () => { location.hash = hashFor((await this.#host.create()).id); });
+        this.#$('#welcome').hidden = typeof this.#host.clearSeed !== 'function';      //only hosts that can seed a workspace offer it
+        on('#welcome', 'click', async () => { location.hash = hashFor((await this.#createWelcome()).id); });
         on('#duplicate', 'click', async () => { if (this.#meta) location.hash = hashFor((await this.#host.duplicate(this.#meta.id)).id); });
         on('#archive', 'click', async () => {
             if (!this.#meta) return;
@@ -116,14 +120,24 @@ export class AgoraShell extends ReactiveComponent {
 
     async #openFromHash() {
         let id = idFromHash();
+        //?template=boas-vindas (from the site): a fresh welcome workspace, then the parameter goes away so a reload does not make another
+        const params = new URLSearchParams(location.search);
+        if (params.get('template') === WELCOME_TEMPLATE_NAME && typeof this.#host.clearSeed === 'function') {
+            params.delete('template');
+            const query = params.toString();
+            history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${hashFor((await this.#createWelcome()).id)}`);
+            id = idFromHash();
+        }
         if (id && !(await this.#host.get(id)) && this.#host.syncEnabled) await this.#host.adopt(id);      //a shared link: the content arrives through the sync
         if (!id || !(await this.#host.get(id)) || (await this.#host.get(id)).archivedAt) {
-            const first = (await this.#host.list())[0] ?? await this.#host.create('Meu primeiro workspace');
+            const first = (await this.#host.list())[0] ?? (typeof this.#host.clearSeed === 'function' ? await this.#createWelcome() : await this.#host.create('Meu primeiro workspace'));
             id = first.id;
             history.replaceState(null, '', hashFor(id));
         }
         await this.#open(id);
     }
+
+    #createWelcome() { return this.#host.create(WELCOME.title, { seed: WELCOME_TEMPLATE_NAME }); }
 
     async #open(id) {
         this.#cleanup.forEach(stop => stop());
@@ -133,6 +147,13 @@ export class AgoraShell extends ReactiveComponent {
         const doc = await this.#host.openDocument(this.#meta);
         const workspace = new Workspace({ doc, registry: this.#registry, user: this.#host.identity, domain: this.#host.domain ?? null, id });
         this.#workspace = workspace;
+
+        //A workspace created from a template is filled in once, by the person who created it, before anything is shown
+        if (this.#meta.seed === WELCOME_TEMPLATE_NAME) {
+            if (workspace.canCompose && workspace.instances().length === 0) applyTemplate(workspace, WELCOME);
+            await this.#host.clearSeed(id);
+            this.#meta = await this.#host.get(id);
+        }
 
         //The document is the source of truth for the title; the catalog only mirrors it for the list.
         //Only the creator seeds it: someone who adopted a shared workspace has not received the content yet,

@@ -1,5 +1,5 @@
 {
- "version": "cfaa6c4d5a25ce32",
+ "version": "f9045100c34e48f8",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -54,6 +54,7 @@
   "core/registry/component_registry.js",
   "core/registry/manifest.js",
   "core/workspace/layout.js",
+  "core/workspace/templates.js",
   "core/workspace/workspace.js",
   "hospedar.html",
   "index.html",
@@ -78,6 +79,7 @@
   "ui/shell/agora-shell.css",
   "ui/shell/agora-shell.html",
   "ui/shell/agora-shell.js",
+  "ui/welcome/welcome_template.js",
   "ui/workspace/agora-workspace.css",
   "ui/workspace/agora-workspace.html",
   "ui/workspace/agora-workspace.js",

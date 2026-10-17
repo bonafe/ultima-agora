@@ -9,6 +9,7 @@ let topZ = 10;
 //layer: the element the frame floats in; rect: { x, y, w, h } relative to it.
 export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise, onHide = null, dockLabel = 'Reacoplar ao painel' }) {
     const state = { ...rect };
+    let shownTitle = title;
     const titleText = h('span', { class: 'float-title' }, title);
     const bar = h('div', { class: 'float-bar', style: 'padding-right:16px', tabindex: 0, role: 'group', 'aria-label': `Janela flutuante ${title}. Setas movem; Enter: ${dockLabel.toLowerCase()}.` },
         h('span', { class: 'float-grip', 'aria-hidden': 'true' }, '⠿'), titleText,
@@ -48,13 +49,24 @@ export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise
     bar.addEventListener('pointerdown', event => {
         if (event.button !== 0 || event.target.closest('button')) return;
         event.preventDefault();
-        bar.setPointerCapture(event.pointerId);
+        try { bar.setPointerCapture(event.pointerId); } catch { /* not an active pointer (synthetic): the listeners still work */ }
         element.classList.add('moving');
         const from = { x: event.clientX - state.x, y: event.clientY - state.y };
-        const move = e => { state.x = e.clientX - from.x; state.y = e.clientY - from.y; apply(); };
-        const up = () => {
-            element.classList.remove('moving');
+        const win = element.ownerDocument.defaultView ?? window;
+        let outside = false;
+        //Past the edge of the browser window the pointer is still followed (captured): letting go there opens the window
+        //in another browser window, on the screen where it was dropped (multi-monitor)
+        const move = e => {
+            state.x = e.clientX - from.x; state.y = e.clientY - from.y; apply();
+            outside = e.clientX < 0 || e.clientY < 0 || e.clientX > win.innerWidth || e.clientY > win.innerHeight;
+            element.classList.toggle('leaving', outside);
+            titleText.textContent = outside ? 'Solte para abrir em outra janela' : shownTitle;
+        };
+        const up = e => {
+            element.classList.remove('moving', 'leaving');
+            titleText.textContent = shownTitle;
             bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up);
+            if (outside && e.type === 'pointerup') onPopout({ x: e.screenX, y: e.screenY });
         };
         bar.addEventListener('pointermove', move); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
     });
@@ -107,7 +119,7 @@ export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise
     return {
         element, body,
         get rect() { return { ...state }; },
-        setTitle(text) { titleText.textContent = text; element.setAttribute('aria-label', text); },
+        setTitle(text) { shownTitle = text; titleText.textContent = text; element.setAttribute('aria-label', text); },
         raise, fit: apply,
         destroy() { observer.disconnect(); element.remove(); },
     };

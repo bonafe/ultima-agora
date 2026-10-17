@@ -5,6 +5,7 @@ Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions 
 ## Unreleased (phone UX)
 
 ### Added
+- Arrastar uma janela **flutuante** pela barra de título para fora do navegador e soltar abre ela em outra janela do navegador, na tela onde foi solta (antes só a aba de uma janela acoplada fazia isso). O workspace só vira "uma janela por vez" quando o navegador inteiro está estreito (o shell decide), não mais porque a paleta e o inspetor estreitam a área.
 - **Picture-in-Picture** (Chrome/Edge, Document PiP API): "Fixar por cima de tudo (PiP)" no menu da janela move o componente vivo para uma janelinha sempre por cima (uma por vez; precisa de clique). Durante uma chamada, sair da aba abre a chamada em PiP sozinha (Media Session `enterpictureinpicture`, como o Google Meet) e voltar à aba restaura. Navegadores sem a API não veem o item.
 - Janelas flutuantes redimensionam pelos 4 cantos e pelas 4 laterais (antes só o canto inferior direito); o lado oposto fica parado. As alças ficam metade fora da borda (mais fácil de acertar) e uma janela flutuante nova nasce com no máximo 80% do workspace, inteira dentro dele (antes podia encostar na borda da tela, sem como pegar).
 - **Components answer to the width of their own box** (R-ADAPT-1..3): the host of every `AgoraComponent` is a container (`container-type: inline-size`) and exposes `data-box` (`compact` < 420 px, `regular`, `wide` ≥ 720 px; `core/components/box.js`). Each catalog component has `@container` rules and `@media (pointer: coarse)` touch targets (44 px, 16 px inputs).

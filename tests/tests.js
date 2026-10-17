@@ -878,6 +878,46 @@ test('view: Picture-in-Picture moves the live element in, docking brings it back
     frame.remove();
 });
 
+test('view: dragging a FLOATING window by its bar past the edge of the browser and letting go opens it in another browser window, where it was dropped', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    const frameWin = document.createElement('iframe');
+    document.body.append(frameWin);
+    let features = null;
+    view.openWindow = (url, name, f) => { features = f; return frameWin.contentWindow; };
+    view.float(b, { x: 100, y: 10, w: 400, h: 200 });
+    await wait(100);
+    view.scrollIntoView();
+    const bar = view.rootNode.querySelector('#floats .float-bar');
+    const fire = (type, x, y, extra = {}) => bar.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 9, button: 0, clientX: x, clientY: y, ...extra }));
+    const r = bar.getBoundingClientRect();
+    fire('pointerdown', r.left + 80, r.top + 8);
+    fire('pointermove', r.left + 90, r.top + 8);
+    fire('pointermove', innerWidth + 120, r.top + 8);
+    assert(view.rootNode.querySelector('#floats .float.leaving') && bar.textContent.includes('Solte'), 'tells the person it will open elsewhere');
+    fire('pointerup', innerWidth + 120, r.top + 8, { screenX: 2400, screenY: 300 });
+    await wait(100);
+    assert(features?.includes('left=') && !view.rootNode.querySelector('#floats .float') && instanceElement(view, b) === null, 'popped out');
+    assert(Number(/left=(-?\d+)/.exec(features)[1]) > 1800, `opened over the drop point: ${features}`);
+    view.dock(b);
+    frameWin.remove();
+});
+
+test('view: letting go of a floating window inside the browser only moves it', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    let opened = false;
+    view.openWindow = () => { opened = true; return null; };
+    view.float(b, { x: 100, y: 10, w: 400, h: 200 });
+    await wait(100);
+    view.scrollIntoView();
+    const bar = view.rootNode.querySelector('#floats .float-bar'), r = bar.getBoundingClientRect();
+    const fire = (type, x, y) => bar.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 9, button: 0, clientX: x, clientY: y }));
+    fire('pointerdown', r.left + 80, r.top + 8); fire('pointermove', r.left + 120, r.top + 20); fire('pointerup', r.left + 120, r.top + 20);
+    await wait(50);
+    assert(!opened && view.rootNode.querySelector('#floats .float'), 'still a floating window');
+});
+
 test('view: a blocked pop-up falls back to a floating window and tells the person', async () => {
     const { view, workspace } = await mountView();
     const { b } = await addTwo(view, workspace);
@@ -1448,6 +1488,25 @@ test('chat in the shell: the drawer button counts unread messages, colours menti
     await wait(60);
     assert(!root.querySelector('#chat-pane').hasAttribute('hidden') && root.querySelector('#chat-pane ultima-chat'));
     assert(chat.unread === 0 && badge.hidden && !document.title.startsWith('('), 'opened: read, badge gone');
+    shell.remove();
+    history.replaceState(null, '', location.pathname + savedHash);
+    await host.destroy();
+});
+
+test('shell on a desktop-width window: the palette and the inspector narrow the workspace below 720px, and it keeps tabs and drag (not one window at a time)', async () => {
+    const host = new DevHost({ dbName: `agora-test-${uuid()}` });
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const shell = document.createElement('agora-shell');
+    shell.style.cssText = 'display:block;width:900px;height:600px';
+    const savedHash = location.hash;
+    document.body.append(shell);
+    assert(await settleOrTimeout(shell.whenLoaded()));
+    await shell.init({ host, registry });
+    await wait(400);
+    const view = shell.shadowRoot.querySelector('agora-workspace');
+    assert(!shell.hasAttribute('compact') && view.clientWidth < 720, `setup: shell ${shell.clientWidth}px, workspace ${view.clientWidth}px`);
+    assert(!view.compact && view.rootNode.querySelector('.tab'), 'a narrow workspace beside the side panels still shows tabs');
     shell.remove();
     history.replaceState(null, '', location.pathname + savedHash);
     await host.destroy();

@@ -463,7 +463,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
             layer: this.rootNode.querySelector('#floats'), title: label, rect: rect ?? this.#defaultRect(id),
             dockLabel: this.#personal.has(id) ? 'Acoplar a um painel' : 'Reacoplar ao painel',
             onHide: this.#personal.has(id) ? () => this.hidePersonal(id) : null,
-            onDock: () => this.dock(id), onPopout: () => this.popout(id), onRaise: () => this.select(id),
+            onDock: () => this.dock(id), onPopout: at => this.popout(id, at ?? null), onRaise: () => this.select(id),
         });
         this.#adopt(id, { kind: 'float', frame, body: frame.body });
         this.select(id);

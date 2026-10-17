@@ -122,6 +122,7 @@ export class AgoraShell extends ReactiveComponent {
         on('#call-min', 'click', () => this.#minimizeCall());
         this.rootNode.addEventListener('compact-add', () => this.#openPane('#palette-pane'));
         this.#mini = this.#buildMini();
+        this.#$('agora-workspace').compactAt = 0;                 //until the shell measures itself: the desktop presentation
         new ResizeObserver(() => {
             const compact = this.clientWidth > 0 && this.clientWidth < COMPACT_AT;
             if (compact !== this.#compact) this.#setCompact(compact);
@@ -342,6 +343,9 @@ export class AgoraShell extends ReactiveComponent {
         const view = this.#$('agora-workspace');
         this.#$('header').removeAttribute('data-open');
         this.#$('#menu').setAttribute('aria-expanded', 'false');
+        //The shell decides, by ITS width, whether the workspace shows one window at a time: the palette and the inspector
+        //take ~500px, so on a normal desktop window the workspace alone is narrow and must still have tabs, drag and float.
+        view.compactAt = compact ? Infinity : 0;
         if (compact) {
             this.#closePanes();
             if (view.isPersonalShown(CALL_WINDOW)) { view.hidePersonal(CALL_WINDOW); this.#expandCall(); }

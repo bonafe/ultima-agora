@@ -23,6 +23,7 @@ import { WhisperProvider } from '../transcription/whisper/whisper_provider.js';
 import { Transcriber } from '../transcription/transcriber.js';
 import { TranscriptClient } from '../collaboration/providers/transcript_client.js';
 import { uuid } from '../core/ids.js';
+import { createFloatFrame } from '../ui/workspace/float_frame.js';
 import { TypeRegistry, registerCoreTypes } from '../core/connections/types.js';
 import { BusError } from '../core/connections/bus.js';
 import { layoutGraph } from '../components/graph/ultima-graph.js';
@@ -744,6 +745,50 @@ test('view: a window floated without a rect lies fully inside the workspace, so 
     assert(f.left >= layer.left - 1 && f.top >= layer.top - 1 && f.right <= layer.right + 1 && f.bottom <= layer.bottom + 1, `outside: ${[f.left, f.top, f.right, f.bottom]} vs ${[layer.left, layer.top, layer.right, layer.bottom]}`);
 });
 
+test('float frame: the resize strips have their size without any stylesheet (a stale cached CSS must not disable them)', () => {
+    const layer = document.createElement('div');
+    layer.style.cssText = 'position:fixed;left:0;top:0;width:800px;height:600px';       //no stylesheet for the frame at all
+    document.body.append(layer);
+    const frame = createFloatFrame({ layer, title: 't', rect: { x: 100, y: 100, w: 400, h: 300 }, onDock() {}, onPopout() {}, onRaise() {} });
+    const size = side => { const r = frame.element.querySelector(`.float-handle.${side}`).getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; };
+    assert(size('n')[0] >= 360 && size('n')[1] === 12 && size('s')[1] === 12 && size('w')[0] === 12 && size('e')[0] === 12 && size('w')[1] >= 260 && size('nw')[0] === 22 && size('se')[1] === 22, `strips: ${['n', 's', 'w', 'e', 'nw', 'se'].map(size).join(' / ')}`);
+    frame.destroy(); layer.remove();
+});
+
+test('float frame: with an old stylesheet that clips the frame (overflow hidden, rounded), a point 12px inside a corner still grabs the corner', () => {
+    const old = document.createElement('style');
+    old.textContent = '.float { position: absolute; overflow: hidden; border-radius: .5rem; border: 1px solid #ccc; box-sizing: border-box; }';
+    const layer = document.createElement('div');
+    layer.style.cssText = 'position:fixed;left:0;top:0;width:800px;height:600px';
+    document.head.append(old); document.body.append(layer);
+    const frame = createFloatFrame({ layer, title: 't', rect: { x: 100, y: 100, w: 400, h: 300 }, onDock() {}, onPopout() {}, onRaise() {} });
+    const r = frame.element.getBoundingClientRect(), misses = [];
+    for (const [name, x, y] of [['nw', r.left + 12, r.top + 12], ['ne', r.right - 12, r.top + 12], ['sw', r.left + 12, r.bottom - 12], ['se', r.right - 12, r.bottom - 12]]) {
+        const hit = document.elementFromPoint(x, y);
+        if (!hit?.classList.contains('float-handle') || hit.dataset.corner !== name) misses.push(`${name}:${hit?.className}`);
+    }
+    frame.destroy(); layer.remove(); old.remove();
+    assert(!misses.length, `corners missed: ${misses.join(' ')}`);
+});
+
+test('view: no gap along the border of a floating window: every point within 12px of a corner, hugging the border, grabs a handle', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    view.float(b, { x: 150, y: 10, w: 400, h: 200 });
+    await wait(100);
+    const frame = view.rootNode.querySelector('#floats .float');
+    frame.scrollIntoView();
+    const r = frame.getBoundingClientRect(), root = frame.getRootNode();
+    const misses = [];
+    for (const [name, sx, sy, ox, oy] of [['nw', r.left, r.top, 1, 1], ['ne', r.right, r.top, -1, 1], ['sw', r.left, r.bottom, 1, -1], ['se', r.right, r.bottom, -1, -1]]) {
+        for (let t = 1; t <= 12; t++) for (const [dx, dy] of [[t, 2], [2, t]]) {
+            const hit = root.elementFromPoint(sx + ox * dx, sy + oy * dy);
+            if (!hit?.classList.contains('float-handle')) misses.push(`${name}(${dx},${dy})`);
+        }
+    }
+    assert(!misses.length, `gaps: ${misses.join(' ')}`);
+});
+
 test('view: a floating window resizes from all four corners and four edges, the opposite side staying put', async () => {
     const { view, workspace } = await mountView();
     const { b } = await addTwo(view, workspace);
@@ -752,13 +797,17 @@ test('view: a floating window resizes from all four corners and four edges, the 
     const frame = view.rootNode.querySelector('#floats .float');
     frame.scrollIntoView();
     const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, button: 0, clientX: x, clientY: y }));
+    const cursors = { nw: 'nw-resize', se: 'se-resize', ne: 'ne-resize', sw: 'sw-resize', n: 'ns-resize', s: 'ns-resize', w: 'ew-resize', e: 'ew-resize' };
     for (const side of ['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e']) {
-        const before = frame.getBoundingClientRect(), handle = frame.querySelector(`.float-handle.${side}`);
-        assert(handle, `no ${side} handle`);
+        const before = frame.getBoundingClientRect();
         const west = side.includes('w'), east = side.includes('e'), north = side.includes('n'), south = side.includes('s');
         const horizontal = west || east, vertical = north || south;
-        const at = handle.getBoundingClientRect(), x0 = at.left + at.width / 2, y0 = at.top + at.height / 2;
-        assert(frame.getRootNode().elementFromPoint(x0, y0) === handle, `${side}: something covers the handle`);
+        //the point to press: on the border, in the corner or the middle of the side
+        const x0 = west ? before.left + 1 : east ? before.right - 1 : (before.left + before.right) / 2;
+        const y0 = north ? before.top + 1 : south ? before.bottom - 1 : (before.top + before.bottom) / 2;
+        const handle = frame.getRootNode().elementFromPoint(x0, y0);
+        assert(handle?.classList.contains('float-handle'), `${side}: nothing to grab at the point (${handle?.className || handle?.tagName})`);
+        assert(getComputedStyle(handle).cursor === cursors[side], `${side}: cursor is "${getComputedStyle(handle).cursor}", expected ${cursors[side]}`);
         fire(handle, 'pointerdown', x0, y0); fire(handle, 'pointermove', x0 + (west ? 20 : 30), y0 + (north ? 10 : 25)); fire(handle, 'pointerup', x0, y0);
         const after = frame.getBoundingClientRect();
         const dw = horizontal ? (west ? -20 : 30) : 0, dh = vertical ? (north ? -10 : 25) : 0;

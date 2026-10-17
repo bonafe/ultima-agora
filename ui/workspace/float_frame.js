@@ -10,15 +10,27 @@ let topZ = 10;
 export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise, onHide = null, dockLabel = 'Reacoplar ao painel' }) {
     const state = { ...rect };
     const titleText = h('span', { class: 'float-title' }, title);
-    const bar = h('div', { class: 'float-bar', tabindex: 0, role: 'group', 'aria-label': `Janela flutuante ${title}. Setas movem; Enter: ${dockLabel.toLowerCase()}.` },
+    const bar = h('div', { class: 'float-bar', style: 'padding-right:16px', tabindex: 0, role: 'group', 'aria-label': `Janela flutuante ${title}. Setas movem; Enter: ${dockLabel.toLowerCase()}.` },
         h('span', { class: 'float-grip', 'aria-hidden': 'true' }, '⠿'), titleText,
         h('button', { type: 'button', class: 'float-btn', title: 'Abrir em outra janela do navegador', 'aria-label': 'Abrir em outra janela do navegador', onClick: () => onPopout() }, '⧉'),
         h('button', { type: 'button', class: 'float-btn', title: dockLabel, 'aria-label': dockLabel, onClick: () => onDock() }, '⇲'),
         onHide ? h('button', { type: 'button', class: 'float-btn', title: 'Esconder (continua em segundo plano)', 'aria-label': 'Esconder', onClick: () => onHide() }, '–') : null,
     );
     const body = h('div', { class: 'float-body' });
-    const corners = ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'].map(edge => h('div', { class: `float-handle ${edge}`, 'data-corner': edge, 'aria-hidden': 'true' }));
-    const element = h('div', { class: 'float', role: 'dialog', 'aria-label': title }, bar, body, ...corners);
+    //The corners use the directional cursors (nw-resize…), not nwse-resize: some Linux cursor themes lack the diagonal
+    //"nwse" name and the browser then keeps the previous cursor, so the corner looked dead.
+    //Eight handles: four edge strips and four corner squares. Geometry AND cursor are inline, not in the stylesheet or set
+    //by script while the mouse moves: a stale cached stylesheet must not disable them, and the cursor must be right the
+    //moment the pointer arrives. Corners are drawn after (above) the strips and touch them, so there is no gap.
+    const EDGE = 'position:absolute;touch-action:none;z-index:5;', CORNER = 'position:absolute;touch-action:none;z-index:6;width:22px;height:22px;';
+    const HANDLES = {
+        n: `${EDGE}left:14px;right:14px;top:-6px;height:12px;cursor:ns-resize`, s: `${EDGE}left:14px;right:14px;bottom:-6px;height:12px;cursor:ns-resize`,
+        w: `${EDGE}top:14px;bottom:14px;left:-6px;width:12px;cursor:ew-resize`, e: `${EDGE}top:14px;bottom:14px;right:-6px;width:12px;cursor:ew-resize`,
+        nw: `${CORNER}left:-8px;top:-8px;cursor:nw-resize`, se: `${CORNER}right:-8px;bottom:-8px;cursor:se-resize`,
+        ne: `${CORNER}right:-8px;top:-8px;cursor:ne-resize`, sw: `${CORNER}left:-8px;bottom:-8px;cursor:sw-resize`,
+    };
+    const corners = Object.keys(HANDLES).map(side => h('div', { class: `float-handle ${side}`, 'data-corner': side, 'aria-hidden': 'true', style: HANDLES[side] }));
+    const element = h('div', { class: 'float', style: 'overflow:visible', role: 'dialog', 'aria-label': title }, bar, body, ...corners);
 
     const clamp = () => {
         const bounds = layer.getBoundingClientRect();
@@ -54,12 +66,12 @@ export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise
     });
     element.addEventListener('pointerdown', raise, true);
 
-    //Resizing from any edge or corner: the opposite side stays where it is
+    //Resizing from any edge or corner: the opposite side stays where it is.
     for (const handle of corners) {
-        const side = handle.dataset.corner;
-        const west = side.includes('w'), east = side.includes('e'), north = side.includes('n'), south = side.includes('s');
         handle.addEventListener('pointerdown', event => {
             if (event.button !== 0) return;
+            const side = handle.dataset.corner;
+            const west = side.includes('w'), east = side.includes('e'), north = side.includes('n'), south = side.includes('s');
             event.preventDefault(); event.stopPropagation();
             raise();
             try { handle.setPointerCapture(event.pointerId); } catch { /* not an active pointer (synthetic): the listeners still work */ }

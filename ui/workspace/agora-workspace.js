@@ -445,8 +445,9 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         const layer = this.rootNode.querySelector('#floats').getBoundingClientRect();
         const shown = this.#elements.get(id)?.tabBody?.getBoundingClientRect();
         const cascade = this.#detached.size * 28;
-        const w = Math.min(Math.max(shown?.width ?? 0, 360), Math.max(240, layer.width - 40));
-        const h = Math.min(Math.max(shown?.height ?? 0, 260), Math.max(160, layer.height - 40));
+        //At most ~80% of the workspace: a window that fills it leaves its edges on the screen's edge, where they are hard to grab
+        const w = Math.min(Math.max(shown?.width ?? 0, 360), Math.max(240, Math.round(layer.width * 0.8)));
+        const h = Math.min(Math.max(shown?.height ?? 0, 260), Math.max(160, Math.round(layer.height * 0.8)));
         //Fully inside the layer: a bottom or right edge out of sight cannot be grabbed to resize
         const fit = rect => ({ ...rect, x: Math.max(0, Math.min(rect.x, layer.width - rect.w)), y: Math.max(0, Math.min(rect.y, layer.height - rect.h)) });
         return fit(shown?.width ? { x: shown.left - layer.left + 24 + cascade, y: shown.top - layer.top + 24 + cascade, w, h } : { x: 60 + cascade, y: 60 + cascade, w: 480, h: 360 });

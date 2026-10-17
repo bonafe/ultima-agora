@@ -735,22 +735,38 @@ test('view: floating a window moves the SAME element to a floating frame; the ta
     assert(view.rootNode.querySelector('.tabpanel:not([hidden])').contains(instanceElement(view, b)) && !view.rootNode.querySelector('#floats .float') && !view.isDetached(b));
 });
 
-test('view: a floating window resizes from all four corners, the opposite corner staying put', async () => {
+test('view: a window floated without a rect lies fully inside the workspace, so every edge can be grabbed', async () => {
     const { view, workspace } = await mountView();
     const { b } = await addTwo(view, workspace);
-    view.float(b, { x: 150, y: 40, w: 400, h: 220 });
+    view.float(b);
+    await wait(100);
+    const layer = view.rootNode.querySelector('#floats').getBoundingClientRect(), f = view.rootNode.querySelector('#floats .float').getBoundingClientRect();
+    assert(f.left >= layer.left - 1 && f.top >= layer.top - 1 && f.right <= layer.right + 1 && f.bottom <= layer.bottom + 1, `outside: ${[f.left, f.top, f.right, f.bottom]} vs ${[layer.left, layer.top, layer.right, layer.bottom]}`);
+});
+
+test('view: a floating window resizes from all four corners and four edges, the opposite side staying put', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    view.float(b, { x: 150, y: 10, w: 400, h: 200 });
     await wait(100);
     const frame = view.rootNode.querySelector('#floats .float');
+    frame.scrollIntoView();
     const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, button: 0, clientX: x, clientY: y }));
-    for (const corner of ['nw', 'ne', 'sw', 'se']) {
-        const before = frame.getBoundingClientRect(), handle = frame.querySelector(`.float-handle.${corner}`);
-        assert(handle, `no ${corner} handle`);
-        const west = corner.includes('w'), north = corner.includes('n');
-        const x0 = west ? before.left : before.right, y0 = north ? before.top : before.bottom;
+    for (const side of ['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e']) {
+        const before = frame.getBoundingClientRect(), handle = frame.querySelector(`.float-handle.${side}`);
+        assert(handle, `no ${side} handle`);
+        const west = side.includes('w'), east = side.includes('e'), north = side.includes('n'), south = side.includes('s');
+        const horizontal = west || east, vertical = north || south;
+        const at = handle.getBoundingClientRect(), x0 = at.left + at.width / 2, y0 = at.top + at.height / 2;
+        assert(frame.getRootNode().elementFromPoint(x0, y0) === handle, `${side}: something covers the handle`);
         fire(handle, 'pointerdown', x0, y0); fire(handle, 'pointermove', x0 + (west ? 20 : 30), y0 + (north ? 10 : 25)); fire(handle, 'pointerup', x0, y0);
         const after = frame.getBoundingClientRect();
-        assert(Math.abs(after.width - (before.width + (west ? -20 : 30))) < 2 && Math.abs(after.height - (before.height + (north ? -10 : 25))) < 2, `${corner}: size`);
-        assert(Math.abs((west ? after.right : after.left) - (west ? before.right : before.left)) < 2 && Math.abs((north ? after.bottom : after.top) - (north ? before.bottom : before.top)) < 2, `${corner}: opposite corner moved`);
+        const dw = horizontal ? (west ? -20 : 30) : 0, dh = vertical ? (north ? -10 : 25) : 0;
+        assert(Math.abs(after.width - (before.width + dw)) < 2 && Math.abs(after.height - (before.height + dh)) < 2, `${side}: size ${after.width}x${after.height}`);
+        if (horizontal) assert(Math.abs((west ? after.right : after.left) - (west ? before.right : before.left)) < 2, `${side}: opposite side moved`);
+        else assert(Math.abs(after.left - before.left) < 2, `${side}: x changed`);
+        if (vertical) assert(Math.abs((north ? after.bottom : after.top) - (north ? before.bottom : before.top)) < 2, `${side}: opposite side moved`);
+        else assert(Math.abs(after.top - before.top) < 2, `${side}: y changed`);
     }
 });
 

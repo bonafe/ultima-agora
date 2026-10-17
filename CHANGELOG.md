@@ -5,7 +5,7 @@ Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions 
 ## Unreleased (phone UX)
 
 ### Added
-- Janelas flutuantes redimensionam por qualquer um dos 4 cantos (antes só o inferior direito); o canto oposto fica parado.
+- Janelas flutuantes redimensionam pelos 4 cantos e pelas 4 laterais (antes só o canto inferior direito); o lado oposto fica parado. Uma janela flutuante nova nasce inteira dentro do workspace (antes a borda de baixo podia ficar fora da tela, sem como pegar).
 - **Components answer to the width of their own box** (R-ADAPT-1..3): the host of every `AgoraComponent` is a container (`container-type: inline-size`) and exposes `data-box` (`compact` < 420 px, `regular`, `wide` ≥ 720 px; `core/components/box.js`). Each catalog component has `@container` rules and `@media (pointer: coarse)` touch targets (44 px, 16 px inputs).
 - **Compact presentation of the workspace** (R-LAY-13..15): below 720 px of its own width the workspace shows ONE window at a time (the layout flattened in reading order, `flattenTree`) with a bottom bar and a sheet listing every window (rename, close, add). The same live elements are moved, never recreated, and all stay mounted. A hidden window that receives a value from a connection gets a dot (`Bus.onDelivery`). The document is untouched.
 - **Shell on a small box** (R-LAY-16): essentials in the header and the rest behind "⋯"; palette, inspector and chat as bottom sheets, one at a time, with a scrim; the call is full screen or a mini-bar above the window bar (mic, camera, leave), so the audio goes on while switching windows. `100dvh`, `viewport-fit=cover`, safe-area insets.

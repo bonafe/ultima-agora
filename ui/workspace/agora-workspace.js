@@ -444,7 +444,9 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         const cascade = this.#detached.size * 28;
         const w = Math.min(Math.max(shown?.width ?? 0, 360), Math.max(240, layer.width - 40));
         const h = Math.min(Math.max(shown?.height ?? 0, 260), Math.max(160, layer.height - 40));
-        return shown?.width ? { x: shown.left - layer.left + 24 + cascade, y: shown.top - layer.top + 24 + cascade, w, h } : { x: 60 + cascade, y: 60 + cascade, w: 480, h: 360 };
+        //Fully inside the layer: a bottom or right edge out of sight cannot be grabbed to resize
+        const fit = rect => ({ ...rect, x: Math.max(0, Math.min(rect.x, layer.width - rect.w)), y: Math.max(0, Math.min(rect.y, layer.height - rect.h)) });
+        return fit(shown?.width ? { x: shown.left - layer.left + 24 + cascade, y: shown.top - layer.top + 24 + cascade, w, h } : { x: 60 + cascade, y: 60 + cascade, w: 480, h: 360 });
     }
 
     //Shows the component in a floating window over the workspace.

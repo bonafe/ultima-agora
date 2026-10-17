@@ -17,7 +17,7 @@ export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise
         onHide ? h('button', { type: 'button', class: 'float-btn', title: 'Esconder (continua em segundo plano)', 'aria-label': 'Esconder', onClick: () => onHide() }, '–') : null,
     );
     const body = h('div', { class: 'float-body' });
-    const corners = ['nw', 'ne', 'sw', 'se'].map(corner => h('div', { class: `float-handle ${corner}`, 'data-corner': corner, 'aria-hidden': 'true' }));
+    const corners = ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'].map(edge => h('div', { class: `float-handle ${edge}`, 'data-corner': edge, 'aria-hidden': 'true' }));
     const element = h('div', { class: 'float', role: 'dialog', 'aria-label': title }, bar, body, ...corners);
 
     const clamp = () => {
@@ -54,9 +54,10 @@ export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise
     });
     element.addEventListener('pointerdown', raise, true);
 
-    //Resizing from any corner: the opposite corner stays where it is
+    //Resizing from any edge or corner: the opposite side stays where it is
     for (const handle of corners) {
-        const west = handle.dataset.corner.includes('w'), north = handle.dataset.corner.includes('n');
+        const side = handle.dataset.corner;
+        const west = side.includes('w'), east = side.includes('e'), north = side.includes('n'), south = side.includes('s');
         handle.addEventListener('pointerdown', event => {
             if (event.button !== 0) return;
             event.preventDefault(); event.stopPropagation();
@@ -66,8 +67,8 @@ export function createFloatFrame({ layer, title, rect, onDock, onPopout, onRaise
             const start = { ...state, px: event.clientX, py: event.clientY };
             const move = e => {
                 const dx = e.clientX - start.px, dy = e.clientY - start.py;
-                state.w = Math.max(MIN_W, start.w + (west ? -dx : dx));
-                state.h = Math.max(MIN_H, start.h + (north ? -dy : dy));
+                if (west || east) state.w = Math.max(MIN_W, start.w + (west ? -dx : dx));
+                if (north || south) state.h = Math.max(MIN_H, start.h + (north ? -dy : dy));
                 if (west) state.x = start.x + start.w - state.w;
                 if (north) state.y = start.y + start.h - state.h;
                 apply();

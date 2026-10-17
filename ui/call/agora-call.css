@@ -1,0 +1,5 @@
+:host { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--agora-surface, #fff); color: var(--agora-text, inherit); }
+#controls { flex: 0 0 auto; }
+#controls > * { height: auto; display: block; }
+agora-workspace { flex: 1; min-height: 8rem; border-top: 1px solid var(--agora-border, #ccc); }
+agora-workspace[hidden] { display: none; }

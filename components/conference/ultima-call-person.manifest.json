@@ -1,0 +1,13 @@
+{
+  "name": "ultima-call-person",
+  "tag": "ultima-call-person",
+  "title": "Pessoa na chamada",
+  "version": "1.0.0",
+  "category": "collaboration",
+  "description": "A imagem de uma pessoa da chamada, como janela própria. Usada pela janela da chamada; não aparece na paleta.",
+  "module": "./ultima-call-person.js",
+  "capabilities": ["conference", "transcript", "resizable"],
+  "config": {
+    "clientId": { "type": "string", "default": "", "title": "Pessoa (conexão)" }
+  }
+}

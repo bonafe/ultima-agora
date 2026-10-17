@@ -1,6 +1,7 @@
 import { AgoraComponent } from '../../core/components/agora_component.js';
 import { h } from '../../ui/dom.js';
 import { LANGUAGES } from '../../transcription/transcriber.js';
+import { createTile, paintTile } from './tile.js';
 
 const T_STATUS = {
     waiting: 'Ligue o microfone para ser transcrito.',
@@ -46,6 +47,7 @@ export default class UltimaConference extends AgoraComponent {
     }
 
     onRole() { this.#paint(); }
+    onConfig() { this.#paint(); }
     onDispose() { this.#stop?.(); }
 
     #notice(message) {
@@ -118,7 +120,8 @@ export default class UltimaConference extends AgoraComponent {
             button.disabled = !room.canPublish;
         }
         this.#paintTranscription();
-        this.#paintTiles(people);
+        root.querySelector('#tiles').toggleAttribute('hidden', !this.config.tiles);       // tiles: false = only the controls (the call window shows people as windows of its own)
+        if (this.config.tiles) this.#paintTiles(people);
     }
 
     #paintTranscription() {
@@ -143,30 +146,8 @@ export default class UltimaConference extends AgoraComponent {
         for (const [id, tile] of this.#tiles) if (!alive.has(id)) { tile.element.remove(); this.#tiles.delete(id); }
         for (const person of people) {
             let tile = this.#tiles.get(person.clientId);
-            if (!tile) {
-                const video = h('video', { autoplay: true, playsinline: true, muted: person.self, 'aria-hidden': 'true' });
-                video.muted = person.self;                   // never play my own voice back to me
-                const avatar = h('div', { class: 'avatar' });
-                const name = h('span', { class: 'name' });
-                const off = h('span', { class: 'off' });
-                const caption = h('div', { class: 'caption', 'aria-hidden': 'true' });
-                const element = h('div', { class: 'tile', role: 'listitem' }, video, avatar, caption, h('div', { class: 'label' }, name, off));
-                tile = { element, video, avatar, name, off, caption };
-                this.#tiles.set(person.clientId, tile);
-            }
-            const hasVideo = !!person.stream && person.cam;
-            if (tile.video.srcObject !== person.stream) tile.video.srcObject = person.stream;
-            if (person.stream) tile.video.play?.().catch(() => {});
-            tile.element.classList.toggle('self', person.self);
-            tile.element.classList.toggle('has-video', hasVideo);
-            tile.element.classList.toggle('speaking', person.speaking && person.mic);
-            tile.element.classList.toggle('connecting', !person.self && !person.stream);
-            tile.avatar.style.background = person.user.color ?? '#667';
-            tile.avatar.textContent = [...(person.user.name ?? '?').replace(/^Participante\s*/, '')][0]?.toUpperCase() ?? '?';
-            tile.name.textContent = person.self ? `${person.user.name} (você)` : person.user.name;
-            tile.off.textContent = [person.mic ? '' : '🔇', person.cam ? '' : '🚫', person.transcribing ? '📝' : ''].filter(Boolean).join(' ');
-            tile.caption.textContent = this.transcript?.captionOf(person.user.id) ?? '';
-            tile.element.setAttribute('aria-label', `${person.user.name}${person.self ? ' (você)' : ''}: microfone ${person.mic ? 'ligado' : 'desligado'}, câmera ${person.cam ? 'ligada' : 'desligada'}${person.speaking && person.mic ? ', falando' : ''}${person.transcribing ? ', sendo transcrito' : ''}`);
+            if (!tile) { tile = createTile(person); this.#tiles.set(person.clientId, tile); }
+            paintTile(tile, person, this.transcript);
             container.append(tile.element);                  // keeps the order: me first
         }
     }

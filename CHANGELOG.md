@@ -2,6 +2,28 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (call window)
+
+### Fixed
+- With a real mouse the browser started its own text drag on a tab press, cancelling the window drag (`pointercancel`) and selecting text. Native `dragstart`/`selectstart` are now blocked while a tab is pressed. (The synthetic-event tests could not see it; checked by hand in Chrome.)
+
+### Changed
+- **The call is a window like the others** (R-CONF-2, R-LAY-12): drag its tab to dock it beside any panel (as a tab or a split of the whole workspace edge), float it, or show it in another browser window (multi-monitor); the 📹 button or "–" hides it without ending the call (it is parked, so audio goes on). It is your own view: nothing in the shared document, nobody else sees how you arranged it. Replaces the fixed tray.
+- **Windows inside the call**: each person is a window (`ultima-call-person`) in a small workspace of its own, with the same docking, tabs, floating and pop-out. Whoever joins gets a window, whoever leaves loses it. "Abrir transcrição" opens the transcript as a window of the call.
+- `ultima-conference` 1.1.0: `tiles` config (`false` = only the controls); the tile drawing moved to `components/conference/tile.js`.
+- `AgoraWorkspaceView`: personal windows (`showPersonal` / `hidePersonal`), `release()`; drags inside a pop-out use that window's own size and `Esc`.
+
+## Unreleased (windows: better docking, floating, other browser windows)
+
+### Added
+- **Dragging windows** is now by pointer: a ghost follows the pointer and one highlight shows exactly what the drop does — a tab at a position (drop on the tab bar, also reorders), split a panel, or split the **whole workspace** (outer edge). The empty part of a tab bar drags too. `Esc` cancels.
+- **Floating windows** (R-LAY-8): double-click a tab, or `⋯` → "Destacar em janela flutuante". Move by the title bar (arrow keys too), resize by the edge, bring back with ⇲ / Enter.
+- **Other browser windows** (R-LAY-8, D-39): `⋯` → "Destacar em outra janela do navegador", or drag a tab out of the browser window and drop it on the other monitor. The live component is moved into the new window (not reloaded), so its connections keep working. Pop-up blocked → falls back to floating and says so.
+- `Layout.place/move` accept `index` (tab position) and `root` (split the whole tree). View state only: detaching changes nothing for collaborators.
+
+### Changed
+- The per-panel drop hints and the HTML5 tab drag were replaced by `ui/workspace/drop_targets.js` (shared by palette drops and window drags). The `⋯` menu is available to read-only users for the detach items.
+
 ## Unreleased (welcome workspace)
 
 ### Added

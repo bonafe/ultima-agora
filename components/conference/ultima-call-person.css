@@ -1,0 +1,17 @@
+:host { display: block; height: 100%; min-height: 8rem; background: #1c1f24; color: #fff; }
+[hidden] { display: none !important; }
+#slot, .tile { height: 100%; }
+#gone { margin: 0; padding: 1rem; opacity: .75; }
+.tile { position: relative; overflow: hidden; border: 2px solid transparent; box-sizing: border-box; }
+.tile.speaking { border-color: #3aa655; }
+.tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile.self video { transform: scaleX(-1); }
+.tile:not(.has-video) video { visibility: hidden; }
+.avatar { position: absolute; inset: 0; display: none; place-items: center; font-size: 2.4rem; font-weight: 700; color: #fff; }
+.tile:not(.has-video) .avatar { display: grid; }
+.label { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: .3rem; align-items: center; padding: .15rem .4rem; font-size: .78rem; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+.label .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.label .off { opacity: .85; }
+.connecting::after { content: "conectando…"; position: absolute; top: .3rem; right: .4rem; font-size: .68rem; background: rgba(0,0,0,.55); padding: 0 .3rem; border-radius: .6rem; }
+.caption { position: absolute; left: 0; right: 0; bottom: 1.35rem; padding: .15rem .4rem; font-size: .8rem; line-height: 1.25; background: rgba(0, 0, 0, .62); max-height: 3.4em; overflow: hidden; }
+.caption:empty { display: none; }

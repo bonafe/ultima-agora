@@ -374,6 +374,37 @@ test('layout: ratio is clamped, reorderTab moves a tab', async () => {
     assert(layout.panel(first).tabs.join() === 'c,a');
 });
 
+test('layout: a tab can be placed at a position, and dropped on its own panel at an index it is reordered', async () => {
+    const layout = new Layout(await openDoc());
+    const first = layout.place('a'); layout.place('b'); layout.place('c');
+    layout.place('d', { panelId: first, index: 1 });
+    assert(layout.panel(first).tabs.join() === 'a,d,b,c');
+    layout.move('c', { panelId: first, side: 'center', index: 0 });
+    assert(layout.panel(first).tabs.join() === 'c,a,d,b');
+});
+
+test('layout: dropping on the workspace edge wraps the whole tree, in one undo step', async () => {
+    const doc = await openDoc();
+    const layout = new Layout(doc);
+    const first = layout.place('a');
+    layout.place('b', { panelId: first, side: 'right' });
+    layout.place('c', { root: true, side: 'bottom' });
+    const root = layout.panel(layout.rootId);
+    assert(root.kind === 'split' && root.dir === 'column', 'root is not a column split');
+    assert(layout.tree().children[0].kind === 'split' && layout.tree().children[1].tabs.join() === 'c');
+    layout.move('a', { root: true, side: 'left' });
+    assert(layout.tree().children[0].tabs.join() === 'a' && layout.instanceIds().length === 3);
+    doc.undo();
+    assert(layout.findPanelOf('a') === first, 'undo did not restore the move');
+});
+
+test('layout: the only window of the workspace dropped on the workspace edge changes nothing', async () => {
+    const layout = new Layout(await openDoc());
+    layout.place('a');
+    layout.move('a', { root: true, side: 'left' });
+    assert(shape(layout) === '[a]');
+});
+
 // --- workspace controller ---
 
 const widgetManifest = { name: 'test-widget', tag: 'test-widget', title: 'Widget', version: '1.2.0', module: './w.js', config: { size: { type: 'integer', default: 1, min: 1, max: 3 } } };
@@ -651,6 +682,226 @@ test('view: dropping a palette item on a panel edge splits it; read-only workspa
     }
     await wait(300);
     assert(view.rootNode.querySelectorAll('.panel').length === 2 && workspace.instances().length === 2);
+});
+
+// --- detached windows: floating and other browser windows ---
+
+const addTwo = async (view, workspace) => {
+    const a = workspace.addInstance('ultima-text');
+    await wait(300);
+    const b = workspace.addInstance('ultima-notes');
+    await wait(300);
+    return { a, b };
+};
+const press = (target, type, x, y, extra = {}) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, cancelable: true, pointerId: 7, button: 0, clientX: x, clientY: y, ...extra }));
+
+test('view: floating a window moves the SAME element to a floating frame; the tab says so; docking brings it back', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    const notes = instanceElement(view, b);
+    notes.onDispose = () => { throw new Error('disposed while detaching'); };
+    view.float(b);
+    await wait(100);
+    const frame = view.rootNode.querySelector('#floats .float');
+    assert(frame && frame.contains(notes) && instanceElement(view, b) === notes, 'not in the floating frame');
+    assert(view.rootNode.querySelector('.detached') && view.isDetached(b));
+    assert(workspace.layout.findPanelOf(b), 'the shared layout must keep it in its panel');
+    view.dock(b);
+    await wait(100);
+    assert(view.rootNode.querySelector('.tabpanel:not([hidden])').contains(instanceElement(view, b)) && !view.rootNode.querySelector('#floats .float') && !view.isDetached(b));
+});
+
+test('view: closing an instance that is floating removes its frame', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    view.float(b);
+    await wait(100);
+    workspace.removeInstance(b);
+    await wait(100);
+    assert(!view.rootNode.querySelector('#floats .float'));
+});
+
+test('view: popping out moves the live element into the other window and docking brings it back; closing the window docks it', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    const frame = document.createElement('iframe');         //stands in for the browser window
+    document.body.append(frame);
+    view.openWindow = () => frame.contentWindow;
+    const notes = instanceElement(view, b);
+    assert(view.popout(b) === true);
+    await wait(100);
+    assert(notes.ownerDocument === frame.contentDocument && frame.contentDocument.title === 'Notas', `not moved: ${frame.contentDocument.title}`);
+    assert(instanceElement(view, b) === null, 'still drawn in the main window');
+    view.dock(b);
+    await wait(100);
+    assert(notes.ownerDocument === document && instanceElement(view, b) === notes);
+    view.popout(b);
+    await wait(100);
+    frame.contentWindow.dispatchEvent(new Event('pagehide'));       //the person closes the window
+    await wait(100);
+    assert(!view.isDetached(b) && instanceElement(view, b) === notes && notes.ownerDocument === document);
+    frame.remove();
+});
+
+test('view: a blocked pop-up falls back to a floating window and tells the person', async () => {
+    const { view, workspace } = await mountView();
+    const { b } = await addTwo(view, workspace);
+    let notice = null;
+    view.addEventListener('view-notice', event => { notice = event.detail.message; });
+    view.openWindow = () => null;
+    assert(view.popout(b) === false);
+    await wait(100);
+    assert(notice?.includes('bloqueou') && view.rootNode.querySelector('#floats .float'));
+});
+
+test('view: dragging a tab by pointer onto another panel edge splits there; a click does not drag', async () => {
+    const { view, workspace } = await mountView();
+    const { a, b } = await addTwo(view, workspace);
+    view.scrollIntoView();                                  //earlier tests leave views stacked below the window; "outside the window" is real here
+    const tab = view.rootNode.querySelector(`.tab[data-id="${b}"]`);
+    const t = tab.getBoundingClientRect();
+    press(tab, 'pointerdown', t.left + 5, t.top + 5);
+    press(tab, 'pointerup', t.left + 5, t.top + 5);
+    assert(view.rootNode.querySelectorAll('.panel').length === 1, 'a click moved something');
+    const area = view.rootNode.querySelector('#root').getBoundingClientRect();
+    press(tab, 'pointerdown', t.left + 5, t.top + 5);
+    press(tab, 'pointermove', t.left + 40, t.top + 40);
+    press(tab, 'pointermove', area.left + area.width * 0.9, area.top + area.height * 0.5);
+    const hint = view.rootNode.querySelector('#hint');
+    assert(!hint.hidden && view.hasAttribute('dragging'), 'no drop highlight while dragging');
+    press(tab, 'pointerup', area.left + area.width * 0.9, area.top + area.height * 0.5);
+    await wait(300);
+    assert(view.rootNode.querySelectorAll('.panel').length === 2 && !view.hasAttribute('dragging') && view.rootNode.querySelector('#hint').hidden);
+    assert(workspace.layout.findPanelOf(a) !== workspace.layout.findPanelOf(b));
+});
+
+test('view: dragging a tab onto the tab bar of its own panel reorders; releasing outside the browser window pops it out', async () => {
+    const { view, workspace } = await mountView();
+    const { a, b } = await addTwo(view, workspace);
+    view.scrollIntoView();
+    const panelId = workspace.layout.findPanelOf(a);
+    assert(workspace.layout.panel(panelId).tabs.join() === `${a},${b}`);
+    const tab = view.rootNode.querySelector(`.tab[data-id="${b}"]`);
+    const first = view.rootNode.querySelector(`.tab[data-id="${a}"]`).getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    press(tab, 'pointerdown', t.left + 5, t.top + 5);
+    press(tab, 'pointermove', first.left + 2, first.top + 5);
+    press(tab, 'pointerup', first.left + 2, first.top + 5);
+    await wait(300);
+    assert(workspace.layout.panel(panelId).tabs.join() === `${b},${a}`, workspace.layout.panel(panelId).tabs.join());
+
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    let features = null;
+    view.openWindow = (url, name, f) => { features = f; return frame.contentWindow; };
+    const moved = view.rootNode.querySelector(`.tab[data-id="${a}"]`);
+    const m = moved.getBoundingClientRect();
+    press(moved, 'pointerdown', m.left + 5, m.top + 5);
+    press(moved, 'pointermove', -30, m.top + 5);
+    assert(view.rootNode.querySelector('.ghost')?.textContent.includes('outra janela'));
+    press(moved, 'pointerup', -30, m.top + 5, { screenX: 1500, screenY: 300 });
+    await wait(200);
+    assert(view.isDetached(a) && /left=1\d\d\d/.test(features ?? ''), `not popped out: ${features}`);
+    frame.remove();
+});
+
+test('view: a personal window floats, goes to another window and hides without leaving the element behind; it is not an instance', async () => {
+    const { view, workspace } = await mountView();
+    const park = document.createElement('div');
+    const element = document.createElement('div');
+    element.textContent = 'chamada';
+    park.append(element);
+    const events = [];
+    view.addEventListener('personal-change', event => events.push(event.detail.shown));
+    view.showPersonal('shell:call', { title: 'Chamada', element, park });
+    assert(view.isDetached('shell:call') && view.rootNode.querySelector('#floats .float .float-title').textContent === 'Chamada' && view.rootNode.querySelector('#floats').contains(element));
+    assert(workspace.instances().length === 0 && view.selectedId === null, 'it is not part of the document');
+    await wait(50);
+    assert(view.rootNode.querySelector('#floats .float'), 'a repaint must not drop it');
+
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    view.openWindow = () => frame.contentWindow;
+    assert(view.popout('shell:call') === true && element.ownerDocument === frame.contentDocument && !view.rootNode.querySelector('#floats .float'));
+    frame.contentWindow.dispatchEvent(new Event('pagehide'));       //the person closes that window: the call is only hidden
+    await wait(50);
+    assert(!view.isDetached('shell:call') && park.contains(element) && element.ownerDocument === document, 'parked again');
+    view.showPersonal('shell:call', { title: 'Chamada', element, park });
+    view.hidePersonal('shell:call');
+    assert(park.contains(element) && !view.isPersonalShown('shell:call') && !view.rootNode.querySelector('#floats .float'), 'hidden: parked, nothing left behind');
+    frame.remove();
+});
+
+test('view: a personal window docks beside a panel as a tab or a split, only for this person, and never touches the document', async () => {
+    const { view, workspace } = await mountView();
+    const { a, b } = await addTwo(view, workspace);
+    const panelId = workspace.layout.findPanelOf(a);
+    const before = JSON.stringify(workspace.doc.get('layout'));
+    const park = document.createElement('div');
+    const element = document.createElement('div');
+    element.textContent = 'chamada';
+    park.append(element);
+    view.showPersonal('shell:call', { title: 'Chamada', element, park });
+    view.dockPersonal('shell:call', { panelId, side: 'center' });
+    await wait(100);
+    assert(!view.rootNode.querySelector('#floats .float') && view.rootNode.querySelector('.tabpanel:not([hidden])').contains(element), 'a tab of that panel, active');
+    assert(tabLabels(view).includes('Chamada') && view.isPersonalShown('shell:call') && !view.isDetached('shell:call'));
+
+    view.dockPersonal('shell:call', { panelId, side: 'right' });
+    await wait(100);
+    assert(view.rootNode.querySelectorAll('.panel').length === 2, 'a split of its own');
+    assert(JSON.stringify(workspace.doc.get('layout')) === before && !workspace.doc.get('instances.shell:call'), 'the shared document is untouched');
+
+    //dragging an instance onto the personal panel lands in the real panel it hangs from
+    const tab = view.rootNode.querySelector(`.tab[data-id="${a}"]`);
+    view.scrollIntoView();
+    const personalPanel = [...view.rootNode.querySelectorAll('.panel')].find(p => p.contains(element));
+    const r = personalPanel.getBoundingClientRect(), t = tab.getBoundingClientRect();
+    press(tab, 'pointerdown', t.left + 5, t.top + 5);
+    press(tab, 'pointermove', r.left + r.width / 2, r.top + r.height * 0.6);
+    press(tab, 'pointerup', r.left + r.width / 2, r.top + r.height * 0.6);
+    await wait(200);
+    assert(workspace.layout.panel(panelId) && workspace.layout.findPanelOf(a) === panelId, 'no document change aimed at a panel that only exists for me');
+
+    //its panel goes away from under it: it floats instead of vanishing
+    workspace.removeInstance(a); workspace.removeInstance(b);
+    await wait(200);
+    assert(view.isPersonalShown('shell:call') && (view.isDetached('shell:call') || view.rootNode.contains(element) || view.rootNode.querySelector('.panel')), 'still shown');
+
+    view.hidePersonal('shell:call');
+    await wait(50);
+    assert(park.contains(element) && !view.rootNode.querySelector('.panel'), 'hidden again');
+});
+
+test('call window: one window per person while I am in the call, composed with the same docking as the rest', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const call = newCall();
+    const ana = call.join('Ana'), bia = call.join('Bia');
+    const element = document.createElement('agora-call');
+    element.style.cssText = 'display:block;width:520px;height:420px';
+    document.body.append(element);
+    await element.init({ parent: { conference: ana.room, transcript: null, transcriber: null, user: ana.user, id: 'w-call' }, registry });
+    const view = element.rootNode.querySelector('agora-workspace');
+    const people = () => element.workspace.instances().filter(i => i.type === 'ultima-call-person');
+    assert(view.hidden && people().length === 0, `out of the call: no windows (${view.hidden} ${people().length})`);
+
+    await ana.room.join({}); await bia.room.join({});
+    await wait(100);
+    assert(!view.hidden && people().length === 2 && people().map(i => i.label).sort().join() === 'Ana,Bia', people().map(i => i.label).join());
+    assert(view.rootNode.querySelectorAll('.panel').length === 2, `each person in a panel of their own (${view.rootNode.querySelectorAll('.panel').length})`);
+    const bob = view.rootNode.querySelector(`[data-instance-id="${people().find(i => i.label === 'Bia').id}"]`);
+    assert(bob && await untilTrue(() => bob.rootNode?.querySelector('.tile')), `the tile is drawn (${!!bob})`);
+
+    view.float(people().find(i => i.label === 'Bia').id);
+    await wait(100);
+    assert(view.rootNode.querySelector('#floats .float')?.contains(bob), 'a person can float out of the call window too');
+
+    await bia.room.leave();
+    await wait(100);
+    assert(people().length === 1 && !view.rootNode.querySelector('#floats .float'), `whoever leaves loses their window (${people().length} ${!!view.rootNode.querySelector('#floats .float')})`);
+    element.dispose(); element.remove();
+    ana.room.destroy(); bia.room.destroy();
 });
 
 test('view: an unknown component type is kept as a notice and its config is preserved', async () => {

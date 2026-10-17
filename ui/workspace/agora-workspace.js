@@ -7,9 +7,11 @@
 import { ReactiveComponent } from '../../vendor/ultima/reactive_component.js';
 import { h } from '../dom.js';
 import { COMPONENT_MIME } from '../palette/agora-palette.js';
+import { dropTargetAt, placement } from './drop_targets.js';
+import { createFloatFrame } from './float_frame.js';
+import { openPopout } from './popout.js';
 
-const INSTANCE_MIME = 'application/x-agora-instance';
-const EDGE = 0.25;
+const DRAG_THRESHOLD = 5;           //px before a press on a tab becomes a drag
 const MENU_ITEMS = [['right', 'Dividir à direita'], ['bottom', 'Dividir abaixo'], ['left', 'Dividir à esquerda'], ['top', 'Dividir acima']];
 
 export class AgoraWorkspaceView extends ReactiveComponent {
@@ -21,6 +23,13 @@ export class AgoraWorkspaceView extends ReactiveComponent {
     #selected = null;
     #queued = false;
     #refocus = null;                //splitter id to refocus after a repaint
+    #detached = new Map();          //instanceId -> { kind: 'float' | 'window', body, frame?, popout? } (view state, R-LAY-5)
+    #personal = new Map();          //id -> { title, element, park, dock }: windows of the shell (the call), not in the document
+                                    //dock: null (floating / other window) or { panelId, side, ratio }: shown beside a panel, for this person only
+    #virtual = new Map();           //virtual panel id -> the real panel it hangs from (rebuilt on every paint)
+
+    //How a new browser window is opened (tests replace it)
+    openWindow = (...args) => window.open(...args);
 
     constructor() {
         super({ templateUrl: './agora-workspace.html', shadowDom: true }, import.meta.url);
@@ -28,9 +37,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
 
     get workspace() { return this.#workspace; }
     set workspace(workspace) {
-        this.#stop.forEach(stop => stop());
-        this.#elements.forEach((entry, id) => { entry.element?.dispose?.(); this.#workspace?.bus.detach(id); });
-        this.#elements.clear();
+        this.release();
         this.#workspace = workspace;
         this.#stop = [
             workspace.doc.onChange('', path => this.#onDocChange(path)),
@@ -43,17 +50,34 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         this.#queuePaint();
     }
 
+    //Lets go of the workspace: stops listening, disposes the instances, closes detached windows
+    release() {
+        this.#stop.forEach(stop => stop());
+        this.#stop = [];
+        for (const id of [...this.#personal.keys()]) this.hidePersonal(id);
+        this.#detached.forEach(detached => this.#release(detached));
+        this.#detached.clear();
+        this.#elements.forEach((entry, id) => { entry.element?.dispose?.(); this.#workspace?.bus.detach(id); });
+        this.#elements.clear();
+    }
+
     get selectedId() { return this.#selected; }
 
     select(id) {
         if (this.#selected === id) return;
+        if (id && !this.#workspace?.instance(id)) return;                       //a personal window is not an instance
         this.#selected = id;
         this.#workspace?.doc.presence.setLocal({ focus: id });
         this.rootNode.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('selected', tab.dataset.id === id));
         this.dispatchEvent(new CustomEvent('instance-selected', { detail: { id }, bubbles: true, composed: true }));
     }
 
-    onLoad() { super.onLoad(); this.#queuePaint(); }
+    onLoad() {
+        super.onLoad();
+        this.#wireComponentDrops();
+        new ResizeObserver(() => this.#detached.forEach(detached => detached.frame?.fit())).observe(this.rootNode.querySelector('#floats'));
+        this.#queuePaint();
+    }
 
     #onDocChange(path) {
         const config = /^instances\.([^.]+)\.config(\.|$)/.exec(path);
@@ -98,11 +122,12 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         for (const [id, entry] of this.#elements) {
             if (!live.has(id)) { entry.element?.dispose?.(); this.#workspace.bus.detach(id); this.#elements.delete(id); }
         }
+        for (const [id, detached] of this.#detached) if (!live.has(id) && !this.#personal.has(id)) { this.#release(detached); this.#detached.delete(id); }
         if (this.#selected && !live.has(this.#selected)) { this.#selected = null; this.dispatchEvent(new CustomEvent('instance-selected', { detail: { id: null }, bubbles: true, composed: true })); }
 
-        const tree = workspace.layout.tree();
+        const tree = this.#withPersonal(workspace.layout.tree());
         root.replaceChildren(tree ? this.#buildNode(tree) : this.#emptyState());
-        this.#acceptComponentDrop(root, null);
+        for (const [id, detached] of this.#detached) if (!this.#personal.has(id)) detached.frame?.setTitle(workspace.instance(id)?.label ?? '');
 
         this.#paintBadges();
         if (this.#refocus) { root.querySelector(`[data-split="${this.#refocus}"]`)?.focus(); this.#refocus = null; }
@@ -144,7 +169,7 @@ export class AgoraWorkspaceView extends ReactiveComponent {
             };
             const up = () => {
                 splitter.removeEventListener('pointermove', move); splitter.removeEventListener('pointerup', up);
-                this.#workspace.layout.setRatio(node.id, ratio);
+                this.#setRatio(node, ratio);
             };
             splitter.addEventListener('pointermove', move);
             splitter.addEventListener('pointerup', up);
@@ -154,14 +179,64 @@ export class AgoraWorkspaceView extends ReactiveComponent {
             if (!(event.key in keys)) return;
             event.preventDefault();
             this.#refocus = node.id;
-            this.#workspace.layout.setRatio(node.id, node.ratio + keys[event.key]);
+            this.#setRatio(node, node.ratio + keys[event.key]);
         });
+    }
+
+    //A split made for a personal window has no place in the document: its ratio is this person's
+    #setRatio(node, ratio) {
+        if (!node.personal) { this.#workspace.layout.setRatio(node.id, ratio); return; }
+        const dock = this.#personal.get(node.personal)?.dock;
+        if (dock) { dock.ratio = Math.min(0.9, Math.max(0.1, ratio)); this.#queuePaint(); }
+    }
+
+    //The shared tree as drawn for THIS person: personal windows docked beside a panel are woven in as tabs or splits.
+    //Nothing here is written to the document; if the panel a window hangs from disappears, the window floats.
+    #withPersonal(tree) {
+        this.#virtual.clear();
+        const docked = [...this.#personal].filter(([, p]) => p.dock);
+        if (!docked.length) return tree;
+        const has = (node, id) => node && (node.id === id || node.children?.some(child => has(child, id)));
+        for (const [id, p] of docked) {
+            if (p.dock.panelId && !has(tree, p.dock.panelId)) { p.dock = null; queueMicrotask(() => this.float(id)); }
+        }
+        const at = anchor => [...this.#personal].filter(([, p]) => p.dock && (p.dock.panelId ?? null) === anchor);
+        const split = (id, p, node, anchor) => {
+            const vid = `v-${id}`;
+            this.#virtual.set(vid, anchor);
+            const first = p.dock.side === 'left' || p.dock.side === 'top';
+            const own = { id: vid, kind: 'tabs', tabs: [id] };
+            return { id: `v-split-${id}`, personal: id, kind: 'split', dir: p.dock.side === 'left' || p.dock.side === 'right' ? 'row' : 'column',
+                ratio: p.dock.ratio ?? (first ? 0.35 : 0.65), children: first ? [own, node] : [node, own] };
+        };
+        const wrap = node => {
+            if (node.kind === 'split') return { ...node, children: node.children.map(wrap) };
+            const here = at(node.id);
+            let result = { ...node, tabs: [...node.tabs, ...here.filter(([, p]) => p.dock.side === 'center').map(([id]) => id)] };
+            for (const [id, p] of here) if (p.dock.side !== 'center') result = split(id, p, result, node.id);
+            return result;
+        };
+        let result = tree ? wrap(tree) : null;
+        for (const [id, p] of at(null)) {
+            if (!result) { this.#virtual.set(`v-${id}`, null); result = { id: `v-${id}`, kind: 'tabs', tabs: [id] }; }
+            else if (p.dock.side === 'center') this.#virtual.set(`v-${id}`, null), result = result.kind === 'tabs' ? { ...result, tabs: [...result.tabs, id] } : split(id, { dock: { ...p.dock, side: 'bottom' } }, result, null);
+            else result = split(id, p, result, null);
+        }
+        return result;
+    }
+
+    //What a tab stands for: an instance of the document, or a personal window
+    #record(id) {
+        const instance = this.#workspace.instance(id);
+        if (instance) return instance;
+        const personal = this.#personal.get(id);
+        return personal ? { id, label: personal.title, personal: true } : null;
     }
 
     #buildTabs(node) {
         const workspace = this.#workspace;
         const readOnly = workspace.readOnly;
-        const records = node.tabs.map(id => workspace.instance(id)).filter(Boolean);
+        const records = node.tabs.map(id => this.#record(id)).filter(Boolean);
         const ids = records.map(r => r.id);
 
         //Active tab: first one on first sight; afterwards the newest arrival; otherwise whatever the user chose
@@ -178,18 +253,18 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         const select = id => { this.#active.set(node.id, id); this.#queuePaint(); this.select(id); };
 
         const tabs = records.map(record => h('div', {
-            class: `tab${record.id === this.#selected ? ' selected' : ''}`, role: 'presentation', 'data-id': record.id,
-            draggable: !readOnly,
-            onDragstart: event => { event.dataTransfer.setData(INSTANCE_MIME, record.id); event.dataTransfer.effectAllowed = 'move'; },
+            class: `tab${record.id === this.#selected ? ' selected' : ''}${this.#detached.has(record.id) ? ' is-detached' : ''}`, role: 'presentation', 'data-id': record.id,
+            onPointerdown: event => { if (!event.target.closest('.close')) this.#beginDrag(event, record.id); },
+            onDblclick: event => { if (!event.target.closest('.close')) this.float(record.id); },
         },
             h('button', { class: 'label', type: 'button', role: 'tab', 'aria-selected': record.id === active ? 'true' : 'false', tabindex: record.id === active ? 0 : -1, onClick: () => select(record.id), onKeydown: event => this.#tabKeys(event, ids, record.id, select) }, record.label),
-            readOnly ? null : h('button', { class: 'close', type: 'button', 'aria-label': `Fechar ${record.label}`, onClick: () => workspace.removeInstance(record.id) }, '×'),
+            record.personal ? h('button', { class: 'close', type: 'button', 'aria-label': `Esconder ${record.label}`, title: 'Esconder (a chamada continua)', onClick: () => this.hidePersonal(record.id) }, '–')
+                : readOnly ? null : h('button', { class: 'close', type: 'button', 'aria-label': `Fechar ${record.label}`, onClick: () => workspace.removeInstance(record.id) }, '×'),
         ));
 
-        const bar = h('div', { class: 'tabbar' }, h('div', { class: 'tabs', role: 'tablist' }, tabs));
-        if (!readOnly) {
-            bar.append(h('button', { type: 'button', 'aria-label': 'Mais ações do painel', 'aria-haspopup': 'menu', onClick: () => this.#toggleMenu(bar, active) }, '⋯'));
-        }
+        const bar = h('div', { class: 'tabbar', onPointerdown: event => { if (!event.target.closest('.tab, button')) this.#beginDrag(event, active); } },
+            h('div', { class: 'tabs', role: 'tablist' }, tabs));
+        bar.append(h('button', { type: 'button', 'aria-label': 'Mais ações do painel', 'aria-haspopup': 'menu', onClick: () => this.#toggleMenu(bar, active) }, '⋯'));
         panel.append(bar);
 
         for (const record of records) {
@@ -201,7 +276,6 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         }
         panel.addEventListener('pointerdown', () => { if (this.#active.get(node.id)) this.select(this.#active.get(node.id)); }, true);
 
-        this.#acceptDrops(panel, node.id);
         return panel;
     }
 
@@ -219,23 +293,38 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         if (existing) { existing.remove(); return; }
         const panelId = this.#workspace.layout.findPanelOf(instanceId);
         const close = () => menu.remove();
-        const menu = h('div', { class: 'menu', role: 'menu', onKeydown: event => { if (event.key === 'Escape') { close(); bar.querySelector('button[aria-haspopup]').focus(); } } },
-            ...MENU_ITEMS.map(([side, label]) => h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); this.#workspace.moveInstance(instanceId, { panelId, side }); } }, label)),
-            h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); this.#workspace.removeInstance(instanceId); } }, 'Fechar componente'));
+        const item = (label, action) => h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); action(); } }, label);
+        const detach = this.#detached.has(instanceId)
+            ? [item('Reacoplar ao painel', () => this.dock(instanceId))]
+            : [item('Destacar em janela flutuante', () => this.float(instanceId)), item('Destacar em outra janela do navegador', () => this.popout(instanceId))];
+        const personal = this.#personal.has(instanceId) ? [item('Esconder (a chamada continua)', () => this.hidePersonal(instanceId))] : [];
+        const structure = this.#workspace.readOnly || personal.length ? personal : [
+            ...MENU_ITEMS.map(([side, label]) => item(label, () => this.#workspace.moveInstance(instanceId, { panelId, side }))),
+            item('Fechar componente', () => this.#workspace.removeInstance(instanceId)),
+        ];
+        const menu = h('div', { class: 'menu', role: 'menu', onKeydown: event => { if (event.key === 'Escape') { close(); bar.querySelector('button[aria-haspopup]').focus(); } } }, ...detach, ...structure);
         bar.append(menu);
         menu.querySelector('button').focus();
     }
 
     // ---- instances ----
 
+    //body: the tab's body. A detached instance keeps its element in its float/window; the tab only says so.
     #mount(record, body) {
+        if (record.personal) { body.append(this.#personal.get(record.id).element); return; }
         let entry = this.#elements.get(record.id);
         if (!entry) {
-            entry = { element: null, body };
+            entry = { element: null, tabBody: body };
             this.#elements.set(record.id, entry);
             this.#create(record, entry);
         }
-        entry.body = body;
+        entry.tabBody = body;
+        const detached = this.#detached.get(record.id);
+        if (detached) {
+            body.append(this.#placeholder(record, detached));
+            if (entry.element && entry.element.parentNode !== detached.body) detached.body.replaceChildren(entry.element);
+            return;
+        }
         body.append(entry.element ?? h('p', { class: 'notice' }, 'Carregando…'));
     }
 
@@ -273,68 +362,264 @@ export class AgoraWorkspaceView extends ReactiveComponent {
         }
         if (this.#elements.get(record.id) !== entry) { element.dispose?.(); return; }       //removed while loading
         entry.element = element;
-        entry.body.replaceChildren(element);
+        (this.#detached.get(record.id)?.body ?? entry.tabBody).replaceChildren(element);
         element.onRole?.(workspace.role);
         if (element.deliverInput) workspace.bus.attach(record.id, element);
     }
 
+    // ---- detaching: floating windows and other browser windows (view state, never in the document) ----
+
+    isDetached(id) { return this.#detached.has(id); }
+
+    #notice(message) { this.dispatchEvent(new CustomEvent('view-notice', { detail: { message }, bubbles: true, composed: true })); }
+
+    #placeholder(record, detached) {
+        const where = detached.kind === 'float' ? 'numa janela flutuante' : 'em outra janela do navegador';
+        return h('div', { class: 'detached' },
+            h('p', {}, `“${record.label}” está ${where}.`),
+            h('div', {},
+                h('button', { type: 'button', onClick: () => { detached.frame?.raise(); detached.popout?.focus(); } }, 'Mostrar'), ' ',
+                h('button', { type: 'button', onClick: () => this.dock(record.id) }, 'Reacoplar aqui')));
+    }
+
+    #elementOf(id) { return this.#personal.get(id)?.element ?? this.#elements.get(id)?.element ?? null; }
+    #labelOf(id) { return this.#personal.get(id)?.title ?? this.#workspace?.instance(id)?.label ?? null; }
+
+    #release(detached) { detached.frame?.destroy(); detached.popout?.close(); }
+
+    //Makes `next` the place where the live element is drawn. The element itself is never recreated.
+    #adopt(id, next) {
+        const previous = this.#detached.get(id);
+        const personal = this.#personal.get(id);
+        if (personal) personal.dock = null;
+        this.#detached.set(id, next);
+        next.body.replaceChildren(this.#elementOf(id) ?? h('p', { class: 'notice' }, 'Carregando…'));
+        if (previous) this.#release(previous);
+        this.#queuePaint();
+    }
+
+    //Where the window should open: over the place the component was, a little off so it reads as a new layer
+    #defaultRect(id) {
+        const layer = this.rootNode.querySelector('#floats').getBoundingClientRect();
+        const shown = this.#elements.get(id)?.tabBody?.getBoundingClientRect();
+        const cascade = this.#detached.size * 28;
+        const w = Math.min(Math.max(shown?.width ?? 0, 360), Math.max(240, layer.width - 40));
+        const h = Math.min(Math.max(shown?.height ?? 0, 260), Math.max(160, layer.height - 40));
+        return shown?.width ? { x: shown.left - layer.left + 24 + cascade, y: shown.top - layer.top + 24 + cascade, w, h } : { x: 60 + cascade, y: 60 + cascade, w: 480, h: 360 };
+    }
+
+    //Shows the component in a floating window over the workspace.
+    float(id, rect = null) {
+        const label = this.#labelOf(id);
+        if (label === null || !this.loaded) return;
+        const current = this.#detached.get(id);
+        if (current?.kind === 'float') { current.frame.raise(); return; }
+        const frame = createFloatFrame({
+            layer: this.rootNode.querySelector('#floats'), title: label, rect: rect ?? this.#defaultRect(id),
+            dockLabel: this.#personal.has(id) ? 'Acoplar a um painel' : 'Reacoplar ao painel',
+            onHide: this.#personal.has(id) ? () => this.hidePersonal(id) : null,
+            onDock: () => this.dock(id), onPopout: () => this.popout(id), onRaise: () => this.select(id),
+        });
+        this.#adopt(id, { kind: 'float', frame, body: frame.body });
+        this.select(id);
+        this.#announce(id);
+    }
+
+    //Shows the component in another browser window. `at` ({ x, y } screen coordinates) puts it where the pointer was
+    //dropped, so dragging a window out of the browser lands it on the other monitor.
+    popout(id, at = null) {
+        const label = this.#labelOf(id);
+        if (label === null || !this.loaded) return false;
+        const current = this.#detached.get(id);
+        if (current?.kind === 'window') { current.popout.focus(); return true; }
+        const size = current?.frame?.rect ?? this.#defaultRect(id);
+        const w = Math.max(size.w, 520), h = Math.max(size.h, 380);
+        const rect = { w, h, x: at ? at.x - w / 2 : window.screenX + 80, y: at ? at.y - 20 : window.screenY + 80 };
+        const popout = openPopout({
+            title: label, rect, themeSource: this, open: this.openWindow,
+            dockLabel: this.#personal.has(id) ? 'Acoplar ao workspace' : 'Reacoplar ao workspace',
+            onHide: this.#personal.has(id) ? () => this.hidePersonal(id) : null,
+            onDock: () => this.dock(id),
+            //Closing the window: a component goes back to its panel, a personal window (the call) just hides
+            onClosed: () => { if (this.#detached.get(id)?.popout === popout) { if (this.#personal.has(id)) this.hidePersonal(id); else this.dock(id); } },
+        });
+        if (!popout) {
+            this.#notice('O navegador bloqueou a nova janela. Permita pop-ups para este site (ícone na barra de endereço) e tente de novo.');
+            if (!current) this.float(id);
+            return false;
+        }
+        this.#adopt(id, { kind: 'window', popout, body: popout.body });
+        this.#announce(id);
+        return true;
+    }
+
+    //Brings the component back into its panel
+    dock(id) {
+        if (this.#personal.has(id)) { this.dockPersonal(id); return; }
+        const detached = this.#detached.get(id);
+        if (!detached) return;
+        this.#detached.delete(id);
+        const entry = this.#elements.get(id);
+        if (entry?.element && entry.tabBody) entry.tabBody.replaceChildren(entry.element);     //out of the window before it closes
+        this.#release(detached);
+        const panelId = this.#workspace.layout.findPanelOf(id);
+        if (panelId) this.#active.set(panelId, id);
+        this.#queuePaint();
+        this.select(id);
+    }
+
+    // ---- personal windows: a window of the shell (the call) that is not in the document ----
+    //It floats, goes to another browser window and is hidden like any other, but has no panel to dock to: hiding
+    //parks its element in `park` (a hidden container), so whatever it runs (the call) goes on.
+
+    //Shows `element` as a floating window (or in another browser window). `rect` is { x, y, w, h } in the workspace.
+    showPersonal(id, { title, element, park, rect = null }) {
+        if (!this.loaded) return;
+        this.#personal.set(id, { title, element, park, dock: null });
+        const layer = this.rootNode.querySelector('#floats').getBoundingClientRect();
+        const w = Math.min(560, Math.max(240, layer.width - 40)), height = Math.min(460, Math.max(160, layer.height - 40));
+        this.float(id, rect ?? { x: layer.width - w - 20, y: layer.height - height - 20, w, h: height });
+    }
+
+    isPersonalShown(id) { return this.#personal.has(id); }
+
+    //Shows the window beside a panel, like a component of the layout but only for this person. `panelId` null with
+    //side 'center' = the first panel; with `root`, a side of the whole workspace. Dropped by dragging its tab.
+    dockPersonal(id, { panelId = null, side = 'center', root = false } = {}) {
+        const personal = this.#personal.get(id);
+        if (!personal) return;
+        const detached = this.#detached.get(id);
+        if (detached) {
+            this.#detached.delete(id);
+            personal.park?.append(personal.element);                  //out of the window before it closes
+            this.#release(detached);
+        }
+        const anchor = root ? null : panelId ?? (side === 'center' ? this.#workspace.layout.defaultPanel() : null);
+        personal.dock = { panelId: anchor, side };
+        this.#queuePaint();
+        this.#announce(id);
+    }
+
+    hidePersonal(id) {
+        const personal = this.#personal.get(id);
+        if (!personal) return;
+        const detached = this.#detached.get(id);
+        this.#detached.delete(id);
+        this.#personal.delete(id);
+        personal.park?.append(personal.element);                  //out of the window before it closes
+        if (detached) this.#release(detached);
+        this.#queuePaint();
+        this.dispatchEvent(new CustomEvent('personal-change', { detail: { id, shown: false }, bubbles: true, composed: true }));
+    }
+
+    #announce(id) {
+        if (this.#personal.has(id)) this.dispatchEvent(new CustomEvent('personal-change', { detail: { id, shown: true, kind: this.#detached.get(id)?.kind ?? 'docked' }, bubbles: true, composed: true }));
+    }
+
     // ---- drag and drop ----
+    //One target computation (drop_targets.js) serves palette items (HTML5 drag) and windows (pointer drag), so the
+    //highlight always shows what the drop will do.
 
-    #zone(event, target) {
-        const rect = target.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width;
-        const y = (event.clientY - rect.top) / rect.height;
-        if (x < EDGE) return 'left';
-        if (x > 1 - EDGE) return 'right';
-        if (y < EDGE) return 'top';
-        if (y > 1 - EDGE) return 'bottom';
-        return 'center';
+    #targetAt(x, y, dragged = null) {
+        const area = this.rootNode.querySelector('#root').getBoundingClientRect();
+        const panels = [...this.rootNode.querySelectorAll('.panel')];
+        return dropTargetAt({ area, panels, layout: this.#workspace.layout, dragged }, x, y);
     }
 
-    #accepts(event) {
-        const types = event.dataTransfer?.types ?? [];
-        return !this.#workspace.readOnly && (types.includes(COMPONENT_MIME) || types.includes(INSTANCE_MIME));
+    //A panel that exists only for a personal window cannot receive document changes: they go to the panel it hangs from
+    #resolve(target) {
+        if (!this.#virtual.has(target.panelId)) return target;
+        const { index, ...rest } = target;
+        const anchor = this.#virtual.get(target.panelId);
+        return anchor ? { ...rest, panelId: anchor } : { ...rest, panelId: this.#workspace.layout.defaultPanel() };
     }
 
-    #acceptDrops(panel, panelId) {
-        const clear = () => panel.querySelectorAll(':scope > .hint').forEach(hint => hint.remove());
-        panel.addEventListener('dragover', event => {
-            if (!this.#accepts(event)) return;
-            event.preventDefault();
-            event.stopPropagation();
-            const side = this.#zone(event, panel);
-            const hint = panel.querySelector(':scope > .hint');
-            if (hint?.dataset.side === side) return;
-            clear();
-            panel.append(h('div', { class: `hint ${side}`, 'data-side': side }));
-        });
-        panel.addEventListener('dragleave', event => { if (!panel.contains(event.relatedTarget)) clear(); });
-        panel.addEventListener('drop', event => {
-            if (!this.#accepts(event)) return;
-            event.preventDefault();
-            event.stopPropagation();
-            const side = this.#zone(event, panel);
-            clear();
-            const type = event.dataTransfer.getData(COMPONENT_MIME);
-            const instanceId = event.dataTransfer.getData(INSTANCE_MIME);
+    #showHint(target, outside = false) {
+        const hint = this.rootNode.querySelector('#hint');
+        hint.hidden = !target;
+        if (!target) return;
+        const { rect } = target;
+        hint.className = `${target.index !== undefined ? 'slot' : ''}${outside ? ' outside' : ''}`;
+        Object.assign(hint.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    }
+
+    //A press on a tab (or on the empty part of the bar) becomes a drag after a few pixels: a window follows the
+    //pointer; releasing over a panel docks it there; releasing OUTSIDE the browser window opens it in a window of its own.
+    #beginDrag(event, instanceId) {
+        if (event.button !== 0 || !instanceId || (this.#workspace.readOnly && !this.#personal.has(instanceId))) return;
+        const label = this.#labelOf(instanceId) ?? '';
+        const start = { x: event.clientX, y: event.clientY };
+        const pointerId = event.pointerId;
+        const win = this.ownerDocument.defaultView ?? window;      //the window this view is drawn in (it may be a pop-out)
+        let ghost = null, target = null, outside = false;
+
+        const cleanup = () => {
+            this.removeEventListener('pointermove', move); this.removeEventListener('pointerup', up); this.removeEventListener('pointercancel', cancel);
+            win.removeEventListener('keydown', key, true);
+            this.removeEventListener('dragstart', native); this.removeEventListener('selectstart', native);
+            ghost?.remove();
+            this.removeAttribute('dragging');
+            this.#showHint(null);
+            this.rootNode.querySelectorAll('.tab.dragged').forEach(tab => tab.classList.remove('dragged'));
+            if (this.hasPointerCapture?.(pointerId)) this.releasePointerCapture(pointerId);
+        };
+        const move = e => {
+            if (e.pointerId !== pointerId) return;
+            if (!ghost) {
+                if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_THRESHOLD) return;
+                ghost = h('div', { class: 'ghost' }, label, h('small', {}));
+                this.rootNode.append(ghost);
+                this.setAttribute('dragging', '');
+                try { this.setPointerCapture(pointerId); } catch { /* synthetic pointer: nothing to capture */ }   //so that the pointer is followed outside the window too
+                this.rootNode.querySelector(`.tab[data-id="${instanceId}"]`)?.classList.add('dragged');
+            }
+            outside = e.clientX < 0 || e.clientY < 0 || e.clientX > win.innerWidth || e.clientY > win.innerHeight;
+            target = outside ? null : this.#targetAt(e.clientX, e.clientY, instanceId);
+            ghost.style.left = `${e.clientX}px`; ghost.style.top = `${e.clientY}px`;
+            ghost.lastChild.textContent = outside ? 'Solte para abrir em outra janela' : '';
+            this.#showHint(target);
+        };
+        const up = e => {
+            if (e.pointerId !== pointerId) return;
+            const dragging = Boolean(ghost);
+            const drop = target, out = outside;
+            cleanup();
+            if (!dragging) return;                                  //it was just a click
             try {
-                if (type) this.#workspace.addInstance(type, { target: { panelId, side } });
-                else if (instanceId) this.#workspace.moveInstance(instanceId, { panelId, side });
+                if (out) this.popout(instanceId, { x: e.screenX, y: e.screenY });
+                else if (drop && this.#personal.has(instanceId)) this.dockPersonal(instanceId, placement(this.#resolve(drop)));
+                else if (drop) {
+                    this.#workspace.moveInstance(instanceId, placement(this.#resolve(drop)));
+                    if (this.#detached.has(instanceId)) this.dock(instanceId);
+                }
             } catch (error) { console.error('[agora-workspace] drop failed:', error); }
-        });
+        };
+        const cancel = e => { if (e.pointerId === pointerId) cleanup(); };
+        const native = e => e.preventDefault();          //the browser would start its own text drag/selection, cancelling this one
+        const key = e => { if (e.key === 'Escape') cleanup(); };
+        this.addEventListener('pointermove', move); this.addEventListener('pointerup', up); this.addEventListener('pointercancel', cancel);
+        this.addEventListener('dragstart', native); this.addEventListener('selectstart', native);
+        win.addEventListener('keydown', key, true);
     }
 
-    //The empty workspace has no panel to receive the drop, so the whole area does
-    #acceptComponentDrop(root) {
-        if (this.#workspace.layout.rootId) return;
-        const area = root.querySelector('.empty');
-        area.addEventListener('dragover', event => { if (this.#accepts(event)) { event.preventDefault(); area.classList.add('drop'); } });
-        area.addEventListener('dragleave', () => area.classList.remove('drop'));
-        area.addEventListener('drop', event => {
+    //Items dragged from the palette use the browser's own drag and drop
+    #wireComponentDrops() {
+        const root = this.rootNode.querySelector('#root');
+        const accepts = event => !this.#workspace?.readOnly && (event.dataTransfer?.types ?? []).includes(COMPONENT_MIME);
+        root.addEventListener('dragover', event => {
+            if (!accepts(event)) return;
             event.preventDefault();
-            area.classList.remove('drop');
+            this.#showHint(this.#targetAt(event.clientX, event.clientY));
+        });
+        root.addEventListener('dragleave', event => { if (!event.relatedTarget || !root.contains(event.relatedTarget)) this.#showHint(null); });
+        root.addEventListener('drop', event => {
+            if (!accepts(event)) return;
+            event.preventDefault();
+            const target = this.#targetAt(event.clientX, event.clientY);
+            this.#showHint(null);
             const type = event.dataTransfer.getData(COMPONENT_MIME);
-            if (type) this.#workspace.addInstance(type);
+            try { if (type && target) this.#workspace.addInstance(type, { target: placement(this.#resolve(target)) }); }
+            catch (error) { console.error('[agora-workspace] drop failed:', error); }
         });
     }
 }

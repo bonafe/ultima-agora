@@ -58,6 +58,14 @@ LayoutEngine
 
 **R-LAY-7.** Mudar de modo **não perde dados**. Cada instância mantém `placement` por modo, e a ausência de placement no novo modo recebe posição automática.
 
+### Janelas destacadas (flutuantes e outras janelas do navegador)
+
+- **R-LAY-8.** Qualquer componente pode ser **destacado** do painel: (a) numa **janela flutuante** sobre o workspace (mover pela barra de título, redimensionar pela borda, teclado: setas movem, Enter reacopla) ou (b) numa **outra janela do navegador** (multi-monitor). Duplo clique na aba flutua; arrastar a aba **para fora da janela do navegador** abre a outra janela onde o ponteiro foi solto; o menu `⋯` oferece ambos.
+- **R-LAY-9.** Destacar é **visão local** (R-LAY-5): o componente continua no seu painel no layout compartilhado (os colegas o veem acoplado); só neste navegador ele é desenhado fora. A aba fica marcada `⧉` e mostra "Mostrar / Reacoplar aqui".
+- **R-LAY-10.** **Binding:** o componente **não é recriado nem recarregado**. O mesmo elemento vivo muda de lugar no DOM (para a janela flutuante, ou para o documento da outra janela). O código segue rodando na janela principal, então documento, portas e barramento continuam ligados sem protocolo de mensagens. Consequências: a janela principal precisa ficar aberta (fechá-la encerra as outras janelas; ao recarregar, tudo volta acoplado); fechar ou recarregar a outra janela reacopla; um componente que escuta o `document` global só ouve a janela principal.
+- **R-LAY-11.** Soltar: o destaque mostra exatamente o que o soltar fará (aba na posição, dividir o painel, dividir o workspace inteiro pela borda). Soltar na barra de abas insere/reordena. `Esc` cancela o arrasto.
+- **R-LAY-12.** **Janelas pessoais:** além dos componentes do documento, o shell pode ter janelas só da visão da pessoa (a chamada). Flutuam, vão para outra janela do navegador e se escondem como as outras, e **acoplam ao lado de qualquer painel** (aba ou divisão), só na visão da pessoa: a árvore compartilhada é desenhada com a janela pessoal costurada, sem escrever nada no documento (se o painel de onde ela pende some, ela passa a flutuar); esconder as guarda fora da tela e o que elas executam (a chamada) continua. A janela da chamada contém um workspace local e pessoal, com uma janela por pessoa, com o mesmo docking, abas, flutuação e destaque (R-CONF-2).
+
 ## 7.4 Inspetor
 
 Permite configurar a instância selecionada sem telas administrativas específicas.

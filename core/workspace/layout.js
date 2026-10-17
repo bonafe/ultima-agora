@@ -49,11 +49,13 @@ export class Layout {
         return null;
     }
 
-    //Puts an instance in the layout. side 'center' adds a tab to the target panel; other sides split it.
-    place(instanceId, { panelId = null, side = 'center' } = {}) {
+    //Puts an instance in the layout. side 'center' adds a tab to the target panel (at `index`, else last); other sides
+    //split it. With `root`, the split wraps the whole tree instead of one panel (dropping on the workspace's edge).
+    place(instanceId, { panelId = null, side = 'center', index = null, root = false } = {}) {
         if (!SIDES.includes(side)) throw new Error(`layout.place: invalid side "${side}"`);
         return this.#doc.transact(`place ${instanceId}`, () => {
-            const target = panelId ?? this.defaultPanel();
+            const wrap = root && side !== 'center' ? this.rootId : null;
+            const target = wrap ?? panelId ?? this.defaultPanel();
             if (!target) {                                              //empty workspace
                 const id = newId();
                 this.#setPanel(id, { kind: 'tabs', tabs: [instanceId] });
@@ -61,9 +63,11 @@ export class Layout {
                 return id;
             }
             const targetPanel = this.panel(target);
-            if (targetPanel?.kind !== 'tabs') throw new Error(`layout.place: panel "${target}" is not a tabs panel`);
+            if (!wrap && targetPanel?.kind !== 'tabs') throw new Error(`layout.place: panel "${target}" is not a tabs panel`);
             if (side === 'center') {
-                this.#setPanel(target, { ...targetPanel, tabs: [...targetPanel.tabs.filter(t => t !== instanceId), instanceId] });
+                const tabs = targetPanel.tabs.filter(t => t !== instanceId);
+                tabs.splice(index === null ? tabs.length : Math.max(0, Math.min(index, tabs.length)), 0, instanceId);
+                this.#setPanel(target, { ...targetPanel, tabs });
                 return target;
             }
             const parentId = this.parentOf(target);                      //before the split exists, or it becomes the parent
@@ -72,7 +76,7 @@ export class Layout {
             const splitId = newId();
             const first = side === 'left' || side === 'top';
             this.#setPanel(splitId, {
-                kind: 'split', dir: side === 'left' || side === 'right' ? 'row' : 'column', ratio: 0.5,
+                kind: 'split', dir: side === 'left' || side === 'right' ? 'row' : 'column', ratio: wrap ? (first ? 0.3 : 0.7) : 0.5,
                 children: first ? [created, target] : [target, created],
             });
             this.#replaceChild(parentId, target, splitId);
@@ -113,15 +117,20 @@ export class Layout {
         this.#setPanel(parentId, { ...parent, children: parent.children.map(c => c === oldId ? replacement : c) });
     }
 
-    //Moves an instance to another panel/side. Dropping the only tab of a panel onto its own edge is a no-op.
-    move(instanceId, { panelId, side = 'center' }) {
+    //Moves an instance to another panel/side. Dropping the only tab of a panel onto its own edge is a no-op; dropping
+    //a tab on its own panel with an `index` reorders it.
+    move(instanceId, { panelId = null, side = 'center', index = null, root = false } = {}) {
         const source = this.findPanelOf(instanceId);
         if (!source) throw new Error(`layout.move: "${instanceId}" is not in the layout`);
         const sourcePanel = this.panel(source);
-        if (panelId === source && (side !== 'center' ? sourcePanel.tabs.length === 1 : true)) return;
+        if (!root && panelId === source) {
+            if (side === 'center') { if (index !== null) this.#doc.transact(`reorder ${instanceId}`, () => this.reorderTab(source, instanceId, index)); return; }
+            if (sourcePanel.tabs.length === 1) return;
+        }
+        if (root && sourcePanel.tabs.length === 1 && this.rootId === source) return;
         this.#doc.transact(`move ${instanceId}`, () => {
             this.#detach(instanceId);
-            this.place(instanceId, { panelId, side });
+            this.place(instanceId, { panelId, side, index, root });
         });
     }
 

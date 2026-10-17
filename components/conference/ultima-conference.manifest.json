@@ -2,7 +2,7 @@
   "name": "ultima-conference",
   "tag": "ultima-conference",
   "title": "Chamada",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "category": "collaboration",
   "description": "Áudio e vídeo com quem está no workspace, em tiles pequenos, com transcrição opcional da sua fala. Câmera e microfone só ligam quando você pede.",
   "module": "./ultima-conference.js",
@@ -10,5 +10,13 @@
     "conference",
     "transcript",
     "resizable"
-  ]
+  ],
+  "config": {
+    "tiles": {
+      "type": "boolean",
+      "default": true,
+      "title": "Mostrar as pessoas aqui",
+      "description": "Desligado: só os controles (as pessoas aparecem como janelas, na janela da chamada)."
+    }
+  }
 }

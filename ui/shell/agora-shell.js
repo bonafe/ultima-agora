@@ -8,6 +8,7 @@ import { h } from '../dom.js';
 import '../palette/agora-palette.js';
 import '../workspace/agora-workspace.js';
 import '../inspector/agora-inspector.js';
+import '../call/agora-call.js';
 import { loadTheme } from '../settings/agora-settings.js';
 
 const STATUS_TEXT = { synced: 'Salvo', saving: 'Salvando…', error: 'Erro', offline: 'Offline (salvo aqui)', connecting: 'Conectando…' };
@@ -16,6 +17,7 @@ const ROLE_NOTICE = {
     participant: 'Você é participante: pode escrever nas notas, mas não alterar a composição do workspace.',
     viewer: 'Você tem acesso somente leitura a este workspace.',
 };
+const CALL_WINDOW = 'shell:call';
 const hashFor = id => `#/workspace/${id}`;
 const idFromHash = () => /^#\/workspace\/(.+)$/.exec(location.hash)?.[1] ?? null;
 const isTextField = element => element?.matches?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
@@ -103,6 +105,8 @@ export class AgoraShell extends ReactiveComponent {
                 this.notify(`Não foi possível adicionar o componente: ${error.message}`);
             }
         });
+        this.rootNode.addEventListener('personal-change', event => { if (event.detail.id === CALL_WINDOW) this.#$('#call-toggle').setAttribute('aria-pressed', String(event.detail.shown)); });
+        this.rootNode.addEventListener('view-notice', event => this.notify(event.detail.message, 'warning'));
         this.rootNode.addEventListener('instance-selected', event => { this.#$('agora-inspector').selectedId = event.detail.id; });
         //Ctrl+Z / Ctrl+Shift+Z, unless the user is typing (text fields have their own undo)
         addEventListener('keydown', event => {
@@ -237,7 +241,8 @@ export class AgoraShell extends ReactiveComponent {
         this.#paintUnread();
     }
 
-    // ---- call tray: the ultima-conference component, floating. It stays mounted (hidden) so the call goes on while it is closed ----
+    // ---- call window: a personal window (floats, goes to another browser window, hides) with a workspace of its own inside.
+    //While hidden it is parked in #call-pane, so the call goes on ----
 
     async #mountCall(workspace) {
         const pane = this.#$('#call-pane');
@@ -245,17 +250,14 @@ export class AgoraShell extends ReactiveComponent {
         this.#callElement?.dispose?.();
         this.#callElement = this.#callRoom = null;
         pane.replaceChildren();
-        pane.setAttribute('hidden', '');
         this.#$('#call-toggle').setAttribute('aria-pressed', 'false');
         const room = workspace.conference;
         this.#$('#call-toggle').toggleAttribute('hidden', !room);
-        if (!room || !this.#registry.has('ultima-conference')) return;
+        if (!room || !this.#registry.has('ultima-conference') || !this.#registry.has('ultima-transcript')) return;
 
-        await this.#registry.load('ultima-conference');
-        const manifest = this.#registry.getManifest('ultima-conference');
-        const element = document.createElement(manifest.tag);
-        element.attach({ instanceId: 'shell-call', manifest, config: {}, services: { conference: room, transcript: workspace.transcript ?? undefined, transcriber: workspace.transcriber ?? undefined } });
+        const element = document.createElement('agora-call');
         pane.append(element);
+        await element.init({ parent: workspace, registry: this.#registry });
         this.#callElement = element;
         this.#callRoom = room;
         this.#cleanup.push(room.on('change', () => this.#paintCall()), workspace.onRole(() => element.onRole?.(workspace.role)));
@@ -263,10 +265,10 @@ export class AgoraShell extends ReactiveComponent {
     }
 
     #toggleCall() {
-        const pane = this.#$('#call-pane');
-        const open = pane.hasAttribute('hidden');
-        pane.toggleAttribute('hidden', !open);
-        this.#$('#call-toggle').setAttribute('aria-pressed', String(open));
+        const view = this.#$('agora-workspace');
+        if (!this.#callElement) return;
+        if (view.isPersonalShown(CALL_WINDOW)) view.hidePersonal(CALL_WINDOW);
+        else view.showPersonal(CALL_WINDOW, { title: 'Chamada', element: this.#callElement, park: this.#$('#call-pane') });
     }
 
     //Count on the button = people in the call; green border = I am in it

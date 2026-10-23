@@ -57,7 +57,7 @@ O componente `<ultima-conference>` usa um `ConferenceProvider` injetado. Impleme
 
 - Entrar numa conferência pede confirmação explícita para ativar microfone e câmera (nunca ligam sozinhos).
 - A transcrição (6.2.1) é uma escolha **de cada pessoa sobre a própria fala**, nunca ligada por outra pessoa nem pelo sistema, e todos veem quem está sendo transcrito.
-- Gravação **fora do MVP**. Se for adotada, exige consentimento visível e é tratada como dado classificado (herda a classificação do workspace).
+- Gravação: **cada pessoa grava só o próprio áudio**, com consentimento explícito no momento de gravar e aviso visível para todos enquanto durar (flag `recording` na presença). É tratada como dado classificado (herda a classificação do workspace). Detalhes, fluxo e API em [14](14-midia-e-integracao.md) (D-40).
 
 ### 6.2.1 Transcrição da chamada (D-37)
 

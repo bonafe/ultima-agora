@@ -25,7 +25,7 @@ export function paintTile(tile, person, transcript) {
     tile.avatar.style.background = person.user.color ?? '#667';
     tile.avatar.textContent = [...(person.user.name ?? '?').replace(/^Participante\s*/, '')][0]?.toUpperCase() ?? '?';
     tile.name.textContent = person.self ? `${person.user.name} (você)` : person.user.name;
-    tile.off.textContent = [person.mic ? '' : '🔇', person.cam ? '' : '🚫', person.transcribing ? '📝' : ''].filter(Boolean).join(' ');
+    tile.off.textContent = [person.mic ? '' : '🔇', person.cam ? '' : '🚫', person.transcribing ? '📝' : '', person.recording ? '🔴' : ''].filter(Boolean).join(' ');
     tile.caption.textContent = transcript?.captionOf(person.user.id) ?? '';
-    tile.element.setAttribute('aria-label', `${person.user.name}${person.self ? ' (você)' : ''}: microfone ${person.mic ? 'ligado' : 'desligado'}, câmera ${person.cam ? 'ligada' : 'desligada'}${person.speaking && person.mic ? ', falando' : ''}${person.transcribing ? ', sendo transcrito' : ''}`);
+    tile.element.setAttribute('aria-label', `${person.user.name}${person.self ? ' (você)' : ''}: microfone ${person.mic ? 'ligado' : 'desligado'}, câmera ${person.cam ? 'ligada' : 'desligada'}${person.speaking && person.mic ? ', falando' : ''}${person.transcribing ? ', sendo transcrito' : ''}${person.recording ? ', gravando' : ''}`);
 }

@@ -6,7 +6,7 @@ import { mix } from './mix.js';
 import { boxSize } from './box.js';
 
 //Services the shell injects through attach(). Each one backs a capability.
-const SERVICE_CAPABILITY = { ports: 'connectable', shared: 'shared-content', presence: 'presence-aware', domain: 'domain-data', chat: 'chat', conference: 'conference', transcript: 'transcript', transcriber: 'transcript' };
+const SERVICE_CAPABILITY = { ports: 'connectable', shared: 'shared-content', presence: 'presence-aware', domain: 'domain-data', chat: 'chat', conference: 'conference', transcript: 'transcript', transcriber: 'transcript', recorder: 'recorder', recordings: 'recorder' };
 
 export const AgoraInstance = (Base) => class extends Base {
     #instanceId = null;
@@ -58,6 +58,8 @@ export const AgoraInstance = (Base) => class extends Base {
     get conference() { return this.#requireCapability('conference'); }
     get transcript() { return this.#requireCapability('transcript'); }
     get transcriber() { return this.#requireCapability('transcriber'); }
+    get recorder() { return this.#requireCapability('recorder'); }
+    get recordings() { return this.#requireCapability('recordings'); }
 
     //The shell calls this when the document's config for this instance changes (including our own setConfig).
     applyConfig(config) {

@@ -24,6 +24,10 @@ import { Transcriber } from '../transcription/transcriber.js';
 import { TranscriptClient } from '../collaboration/providers/transcript_client.js';
 import { uuid } from '../core/ids.js';
 import { createFloatFrame } from '../ui/workspace/float_frame.js';
+import { CallClient } from '../collaboration/providers/call_client.js';
+import { RecordingApi, RecordingApiError } from '../collaboration/providers/recording_api.js';
+import { Recorder, RecorderError, pickMime } from '../recording/recorder.js';
+import { CallRecorder } from '../recording/call_recorder.js';
 import { TypeRegistry, registerCoreTypes } from '../core/connections/types.js';
 import { BusError } from '../core/connections/bus.js';
 import { layoutGraph } from '../components/graph/ultima-graph.js';
@@ -1243,7 +1247,7 @@ test('contract: every component of the catalog honours the AgoraComponent contra
     const registry = new ComponentRegistry();
     await registerCoreComponents(registry);
     const manifests = registry.list();
-    for (const name of ['ultima-text', 'ultima-notes', 'ultima-table', 'ultima-graph', 'ultima-chat', 'ultima-conference', 'ultima-transcript']) assert(manifests.some(m => m.name === name), `the catalog lost ${name}`);
+    for (const name of ['ultima-text', 'ultima-notes', 'ultima-table', 'ultima-graph', 'ultima-chat', 'ultima-conference', 'ultima-transcript', 'ultima-recordings']) assert(manifests.some(m => m.name === name), `the catalog lost ${name}`);
 
     for (const manifest of manifests) {
         const label = manifest.name;
@@ -1758,7 +1762,7 @@ test('palette: lists registered components, filters by search and announces addi
     palette.registry = registry;
     await wait(50);
     const items = () => [...palette.rootNode.querySelectorAll('button.item')];
-    assert(items().length === 7);
+    assert(items().length === 8);
     const search = palette.rootNode.querySelector('#search');
     search.value = 'markdown'; search.dispatchEvent(new Event('input'));
     assert(items().length === 1 && items()[0].textContent.startsWith('Notas'));
@@ -2849,6 +2853,230 @@ test('transcription: Whisper in the browser transcribes real speech end to end (
     provider.destroy();
     context.close();
     assert(ok, `Whisper heard: "${heard.join(' | ')}" (states ${states.join()})`);
+});
+
+// --- call sessions and recordings (docs 06, 09) ---
+
+test('call client: tells the server when I join and leave, remembers the call it put me in, and says it again after a reconnect', () => {
+    const sent = [];
+    const call = new CallClient({ send: request => { sent.push(request.type); return true; } });
+    call.receive({ type: 'call', sessionId: 'early', startedAt: 'x' });
+    assert(call.sessionId === null, 'not in the call: an answer for an old join means nothing');
+    call.join(); call.join();
+    assert(sent.join() === 'join' && call.inCall, 'joining twice says it once');
+    call.receive({ type: 'call', sessionId: 's1', startedAt: '2026-10-17T10:00:00Z' });
+    assert(call.sessionId === 's1' && call.startedAt === '2026-10-17T10:00:00Z');
+    call.onConnected();
+    assert(sent.join() === 'join,join', 'a new connection is a new person to the server');
+    call.leave();
+    assert(sent.at(-1) === 'leave' && !call.inCall && call.sessionId === null);
+    call.onConnected();
+    assert(sent.length === 3, 'not in the call: nothing to announce');
+});
+
+test('recordings api: asks for a token once and refreshes it before it expires, sends the consent, and tells apart what is worth retrying', async () => {
+    let tokens = 0, clock = 1_000_000;
+    const jwt = exp => `h.${btoa(JSON.stringify({ exp })).replace(/=+$/, '')}.s`;
+    const calls = [];
+    let answer = () => ({ ok: true, status: 200, json: async () => ({ id: 'r1' }) });
+    const api = new RecordingApi({
+        baseUrl: 'https://host/sync/', workspaceId: 'ws 1', now: () => clock,
+        session: async () => ({ token: jwt(Math.floor(clock / 1000) + 300 + tokens++) }),
+        fetchImpl: async (url, init) => { calls.push({ url, init }); return answer(); },
+    });
+    const record = await api.start({ kind: 'audio', mime: 'audio/webm' });
+    assert(record.id === 'r1' && calls[0].url === 'https://host/sync/v1/workspaces/ws%201/recordings');
+    assert(JSON.parse(calls[0].init.body).consent === true && calls[0].init.headers.authorization.startsWith('Bearer h.'), 'consent and a bearer token');
+    await api.putPart('r1', 0, new Blob(['x']));
+    assert(tokens === 1 && calls[1].url.endsWith('/recordings/r1/parts/0') && calls[1].init.method === 'PUT', 'the token is reused');
+    clock += 280_000;
+    await api.putPart('r1', 1, new Blob(['y']));
+    assert(tokens === 2, 'refreshed when it was about to expire');
+    answer = () => ({ ok: false, status: 403, json: async () => ({ error: { code: 'forbidden', message: 'não é sua' } }) });
+    const refused = await api.putPart('r1', 2, new Blob(['z'])).catch(e => e);
+    assert(refused instanceof RecordingApiError && refused.status === 403 && refused.retryable === false && refused.message === 'não é sua', 'a refusal will not change by waiting');
+    answer = () => ({ ok: false, status: 503, json: async () => { throw new Error('html'); } });
+    assert((await api.putPart('r1', 2, new Blob(['z'])).catch(e => e)).retryable === true, 'a busy server is worth another try');
+    const offline = new RecordingApi({ baseUrl: 'https://host', workspaceId: 'w', session: async () => ({ token: jwt(9e9) }), fetchImpl: async () => { throw new TypeError('Failed to fetch'); } });
+    const down = await offline.putPart('r', 0, new Blob(['x'])).catch(e => e);
+    assert(down.status === 0 && down.retryable && down.code === 'network');
+    assert(api.mediaUrl({ mediaUrl: '/v1/x?sig=1' }) === 'https://host/sync/v1/x?sig=1' && api.mediaUrl({}) === null);
+});
+
+class FakeMediaRecorder {
+    constructor(stream, options) { this.stream = stream; this.options = options; this.state = 'inactive'; this.tail = null; }
+    start(timeslice) { this.state = 'recording'; this.timeslice = timeslice; }
+    stop() { if (this.state === 'inactive') return; this.state = 'inactive'; if (this.tail) this.ondataavailable?.({ data: new Blob([this.tail]) }); this.onstop?.(); }
+    cut(text) { this.ondataavailable?.({ data: new Blob([text]) }); }
+}
+const fakeRecordingApi = () => {
+    const api = {
+        started: [], parts: new Map(), completed: [], fail: null,
+        async start(options) { api.started.push(options); return { id: 'rec1', ...options }; },
+        async putPart(id, n, blob) { if (api.fail) throw api.fail; api.parts.set(n, await blob.text()); },
+        async complete(id, info) { if (api.fail) throw api.fail; api.completed.push({ id, ...info }); },
+    };
+    return api;
+};
+const newRecorder = (api, storage = new MemoryBackend(), extra = {}) => {
+    const made = [];
+    const recorder = new Recorder({ api, storage, partMs: 100, retryMs: [10, 10, 10], isTypeSupported: () => true, createMediaRecorder: (stream, options) => { const r = new FakeMediaRecorder(stream, options); made.push(r); return r; }, ...extra });
+    return { recorder, made, storage };
+};
+
+test('recorder: never starts without consent; pieces go up in order while recording; stopping joins them; the buffer ends empty', async () => {
+    const api = fakeRecordingApi();
+    const { recorder, made, storage } = newRecorder(api);
+    await recorder.start({ stream: {}, consented: false }).then(() => assert(false, 'recorded without consent'), e => assert(e instanceof RecorderError && e.code === 'consent_required'));
+    assert(api.started.length === 0, 'the server was not even asked');
+    const record = await recorder.start({ stream: {}, consented: true });
+    assert(record.id === 'rec1' && recorder.recording && made[0].timeslice === 100 && api.started[0].kind === 'audio' && api.started[0].mime === 'audio/webm;codecs=opus');
+    await recorder.start({ stream: {}, consented: true }).then(() => assert(false, 'two at once'), e => assert(e.code === 'busy'));
+    made[0].cut('um-'); made[0].cut('dois-');
+    assert(await untilTrue(() => api.parts.size === 2), 'sent while still recording');
+    made[0].tail = 'tres';
+    await recorder.stop();
+    assert(await untilTrue(() => api.completed.length === 1), 'completed');
+    assert([...api.parts.entries()].map(([n, text]) => `${n}:${text}`).join() === '0:um-,1:dois-,2:tres', 'in order');
+    assert(api.completed[0].parts === 3 && api.completed[0].durationMs >= 0, 'with how many pieces to join');
+    assert(!recorder.recording && recorder.pending === 0 && !recorder.busy, 'nothing left');
+    assert(await storage.getLocal('recording:rec1:0') === undefined && await storage.getLocal('recordings:index') .then(i => !i?.length), 'the local buffer is empty again');
+});
+
+test('recorder: with no network the buffer fills and empties in order when it is back; a refusal frees the buffer instead of waiting forever', async () => {
+    const api = fakeRecordingApi();
+    const { recorder, made } = newRecorder(api);
+    await recorder.start({ stream: {}, consented: true });
+    api.fail = new RecordingApiError(0, 'network', 'sem rede');
+    made[0].cut('a'); made[0].cut('b'); made[0].cut('c');
+    assert(await untilTrue(() => recorder.lastError && recorder.pending === 3), 'three pieces waiting, and it says why');
+    assert(api.parts.size === 0);
+    api.fail = null;
+    assert(await untilTrue(() => api.parts.size === 3 && recorder.pending === 0), 'back online: everything went up');
+    assert([...api.parts.values()].join('') === 'abc', 'in order');
+    await recorder.stop();
+    assert(await untilTrue(() => api.completed.length === 1));
+
+    const refusing = fakeRecordingApi();
+    const second = newRecorder(refusing);
+    await second.recorder.start({ stream: {}, consented: true });
+    refusing.fail = new RecordingApiError(409, 'closed', 'encerrada');
+    second.made[0].cut('x');
+    assert(await untilTrue(() => !second.recorder.recording && !second.recorder.busy), 'it gave up: the server will not take it');
+    assert(second.made[0].state === 'inactive', 'and stopped recording');
+    assert(await second.storage.getLocal('recording:rec1:0') === undefined, 'the buffer was freed');
+});
+
+test('recorder: after a reload, what an earlier page left unsent goes up and the recording is closed with it', async () => {
+    const storage = new MemoryBackend();
+    const down = fakeRecordingApi();
+    down.fail = new RecordingApiError(0, 'network', 'sem rede');
+    const first = newRecorder(down, storage);
+    await first.recorder.start({ stream: {}, consented: true });
+    first.made[0].cut('antes-'); first.made[0].cut('da queda');
+    assert(await untilTrue(() => first.recorder.pending === 2));                  //the tab dies here: nothing was sent, two pieces are in the buffer
+    const up = fakeRecordingApi();
+    const second = newRecorder(up, storage);
+    assert(await second.recorder.resume() === 1, 'one recording found in the buffer');
+    assert(await untilTrue(() => up.completed.length === 1), 'closed');
+    assert([...up.parts.values()].join('') === 'antes-da queda' && up.completed[0].parts === 2);
+    assert(await second.recorder.resume() === 0, 'and nothing is left to resume');
+});
+
+test('recorder: picks the best container the browser can record', () => {
+    assert(pickMime('audio', t => t === 'audio/webm;codecs=opus') === 'audio/webm;codecs=opus');
+    assert(pickMime('audio', t => t === 'audio/mp4') === 'audio/mp4', 'Safari');
+    assert(pickMime('audio', () => false) === null && pickMime('nope', () => true) === null);
+});
+
+test('call recorder: only inside the call, only with consent; everyone is told while it goes on; leaving the call stops it; a failed start leaves no badge', async () => {
+    const call = newCall();
+    const ana = call.join('Ana');
+    const api = fakeRecordingApi();
+    const { recorder, made } = newRecorder(api);
+    let sources = 0, disposed = 0;
+    const callRecorder = new CallRecorder({ recorder, room: ana.room, call: new CallClient(), createSource: () => { sources++; return { stream: { fake: true }, dispose: () => { disposed++; } }; } });
+    await callRecorder.start({ consented: true }).then(() => assert(false, 'recorded outside the call'), e => assert(e.code === 'not_in_call', `outside the call: ${e.code} ${e.message}`));
+    await ana.room.join({ mic: true });
+    await callRecorder.start({}).then(() => assert(false, 'recorded without consent'), e => assert(e.code === 'consent_required', `no consent: ${e.code} ${e.message}`));
+    assert(sources === 0, 'no microphone stream was even built');
+    await callRecorder.start({ consented: true });
+    assert(callRecorder.recording && ana.room.participants[0].recording === true, `the badge is up, for everyone (${callRecorder.recording} ${JSON.stringify(ana.room.participants.map(p => p.recording))})`);
+    made[0].cut('x');
+    ana.room.leave();
+    assert(await untilTrue(() => !callRecorder.recording), `leaving the call stops the recording (${callRecorder.recording})`);
+    assert(await untilTrue(() => disposed === 1), `and frees the microphone stream (${disposed})`);
+    assert(await untilTrue(() => !recorder.busy, 2000), `and the recorder is idle (busy ${recorder.busy}, pending ${recorder.pending}, current ${JSON.stringify(recorder.current)}, recording ${recorder.recording}, mr ${made[0].state}, error ${recorder.lastError?.message})`);
+
+    await ana.room.join({ mic: true });
+    api.start = async () => { throw new RecordingApiError(403, 'forbidden', 'Seu papel não permite gravar.'); };
+    await callRecorder.start({ consented: true }).then(() => assert(false, 'should have failed'), e => assert(e.message.includes('papel'), `refused start: ${e.code} ${e.message}`));
+    assert(ana.room.participants[0].recording === false && disposed === 2, `no badge for a recording that never started, and nothing left open (${ana.room.participants[0]?.recording} ${disposed})`);
+    ana.room.destroy();
+});
+
+test('conference component: recording asks for consent first, shows the state and the badge; the recordings list shows what the server has', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    await registry.load('ultima-conference');
+    await registry.load('ultima-recordings');
+    const call = newCall();
+    const ana = call.join('Ana');
+    const api = fakeRecordingApi();
+    const { recorder, made } = newRecorder(api);
+    const callRecorder = new CallRecorder({ recorder, room: ana.room, call: new CallClient(), createSource: () => ({ stream: {}, dispose() {} }) });
+    const mount = async (tag, services) => {
+        const element = document.createElement(tag);
+        element.attach({ instanceId: tag, manifest: registry.getManifest(tag), config: {}, services });
+        element.style.cssText = 'display:block;width:380px;height:420px';
+        document.body.append(element);
+        await element.whenLoaded();
+        return element;
+    };
+    const conference = await mount('ultima-conference', { conference: ana.room, recorder: callRecorder });
+    await ana.room.join({ mic: true });
+    const $ = selector => conference.rootNode.querySelector(selector);
+    assert($('#recording').hidden === false && $('#record-consent').hidden === true && !callRecorder.recording, 'there, and nothing is recorded by joining');
+    $('#record').click();
+    assert($('#record-consent').hidden === false && api.started.length === 0, 'the question first, with what it means');
+    assert($('#record-consent-text').textContent.includes('só o seu áudio') && $('#record-consent-text').textContent.includes('vão ver'), 'it says whose audio and who will know');
+    $('#record-no').click();
+    assert($('#record-consent').hidden === true && api.started.length === 0, 'no means no');
+    $('#record').click(); $('#record-yes').click();
+    assert(await untilTrue(() => callRecorder.recording), 'yes starts it');
+    assert($('#record').getAttribute('aria-pressed') === 'true' && $('#r-status').textContent.includes('Gravando'), 'the panel says so');
+    assert([...conference.rootNode.querySelectorAll('.tile')].find(t => t.classList.contains('self')).querySelector('.label').textContent.includes('🔴'), 'my tile carries the badge');
+    $('#record').click();
+    assert(await untilTrue(() => !callRecorder.recording), 'stops');
+    assert(made[0].state === 'inactive');
+
+    const listing = [
+        { id: 'a1', userName: 'Ana', kind: 'audio', status: 'complete', createdAt: '2026-10-17T10:00:00Z', durationMs: 65000, sizeBytes: 2048, mediaUrl: '/v1/m/a1?sig=1' },
+        { id: 'b2', userName: 'Bia', kind: 'audio', status: 'complete', truncated: true, createdAt: '2026-10-17T10:05:00Z', sizeBytes: 100, mediaUrl: '/v1/m/b2?sig=2' },
+        { id: 'c3', userName: 'Caio', kind: 'audio', status: 'recording', createdAt: '2026-10-17T10:06:00Z' },
+    ];
+    const recordings = { list: async () => listing, mediaUrl: r => r.mediaUrl ? `https://host${r.mediaUrl}` : null, transcript: async format => `TRANSCRIPT ${format}` };
+    const list = await mount('ultima-recordings', { recorder: callRecorder, recordings });
+    assert(await untilTrue(() => list.rootNode.querySelectorAll('.item').length === 3), 'three items');
+    const items = [...list.rootNode.querySelectorAll('.item')];
+    assert(items[0].querySelector('.who').textContent === 'Caio' && items[0].querySelector('audio') === null && items[0].textContent.includes('Gravando agora'), 'newest first; one still recording has no player');
+    const bia = items[1];
+    assert(bia.querySelector('audio').getAttribute('src') === 'https://host/v1/m/b2?sig=2' && bia.querySelector('.warn').textContent.includes('Incompleta'), 'a cut-short one says so');
+    assert(items[2].textContent.includes('1:05') && items[2].textContent.includes('2 KB') && items[2].querySelector('a.download'), 'length, size and a download link');
+    conference.dispose(); list.dispose(); conference.remove(); list.remove();
+    ana.room.destroy();
+});
+
+test('recordings component says so when the workspace has no server', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    await registry.load('ultima-recordings');
+    const element = document.createElement('ultima-recordings');
+    element.attach({ instanceId: 'r', manifest: registry.getManifest('ultima-recordings'), config: {}, services: {} });
+    document.body.append(element);
+    await element.whenLoaded();
+    assert(element.rootNode.querySelector('#notice').hidden === false && element.rootNode.querySelector('#bar').hidden === true);
+    element.dispose(); element.remove();
 });
 
 // --- runner ---

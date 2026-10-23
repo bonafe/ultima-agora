@@ -27,4 +27,14 @@
         <button id="open-transcript" type="button">Abrir transcrição</button>
         <p id="t-status" role="status" aria-live="polite"></p>
     </div>
+    <div id="recording" role="group" aria-label="Gravação" hidden>
+        <button id="record" type="button" aria-pressed="false">Gravar minha fala</button>
+        <div id="record-consent" role="alertdialog" aria-labelledby="record-consent-text" hidden>
+            <p id="record-consent-text">Isto grava só o seu áudio, o que sai do seu microfone, e envia ao workspace para quem tem acesso a ele. Todos na chamada vão ver que você está gravando. Você pode parar quando quiser.</p>
+            <button id="record-yes" type="button">Gravar</button>
+            <button id="record-no" type="button">Cancelar</button>
+        </div>
+        <button id="open-recordings" type="button">Abrir gravações</button>
+        <p id="r-status" role="status" aria-live="polite"></p>
+    </div>
 </section>

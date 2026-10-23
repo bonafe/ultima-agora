@@ -102,7 +102,7 @@ export class Transcriber {
         try {
             this.#session = this.#engine.start(track, {
                 language: this.#language,
-                onSegment: ({ text, startedAt }) => this.#client.send(text, { startedAt, language: this.#language }),
+                onSegment: ({ text, startedAt, durationMs }) => this.#client.send(text, { startedAt, language: this.#language, durationMs }),
                 onState: state => { if (this.#enabled && this.#session) this.#set({ state: state === 'behind' ? 'transcribing' : state === 'error' ? 'error' : state, error: state === 'error' ? 'Não foi possível ouvir o microfone para transcrever.' : this.#error }); },
             });
         } catch (error) { this.#set({ state: 'error', error: error.message }); }

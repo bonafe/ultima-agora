@@ -11,7 +11,7 @@ const OUTBOX_MAX = 100;                 // an hour offline of continuous talk wo
 export class TranscriptClient {
     #me; #send; #canWrite; #captionMs; #now;
     #segments = [];                     // confirmed by the server, ordered by seq
-    #outbox = [];                       // { clientId, body, startedAt, language, createdAt }
+    #outbox = [];                       // { clientId, body, startedAt, language, durationMs, createdAt }
     #received = new Map();              // segment id -> local time it arrived (captions fade by it)
     #hasMore = false;
     #listeners = new Set();
@@ -51,11 +51,11 @@ export class TranscriptClient {
     }
 
     //Queues a segment of MY speech and sends it if connected
-    send(body, { startedAt = this.#now(), language = null } = {}) {
+    send(body, { startedAt = this.#now(), language = null, durationMs = null } = {}) {
         const text = String(body ?? '').trim();
         if (!text) return null;
         if (!this.canWrite) throw new Error('Seu papel não permite transcrever.');
-        const entry = { clientId: uuid(), body: text, startedAt, language, createdAt: this.#now() };
+        const entry = { clientId: uuid(), body: text, startedAt, language, durationMs, createdAt: this.#now() };
         this.#outbox.push(entry);
         if (this.#outbox.length > OUTBOX_MAX) this.#outbox.shift();
         this.#flush();
@@ -66,7 +66,7 @@ export class TranscriptClient {
 
     #flush() {
         for (const entry of this.#outbox) {
-            if (!this.#send({ type: 'send', clientId: entry.clientId, body: entry.body, startedAt: entry.startedAt, language: entry.language })) return;
+            if (!this.#send({ type: 'send', clientId: entry.clientId, body: entry.body, startedAt: entry.startedAt, language: entry.language, durationMs: entry.durationMs })) return;
         }
     }
 

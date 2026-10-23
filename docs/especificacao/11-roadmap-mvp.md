@@ -169,3 +169,7 @@ A seção 22 ("Local-first") e o princípio de projeto exigem que a aplicação 
 - **Papéis (D-30):** `viewer` lê, não escreve; `participant` e acima escrevem; só o autor edita; autor ou dono removem (moderação). Retenção por instância (`CHAT_RETENTION_DAYS`, D-11), não por workspace.
 - **Menções:** `@Maria` casa com o primeiro nome ou o nome completo sem espaços. Notificação = contador, cor, título da aba, rótulo acessível. Referências a instâncias e objetos (R-CHAT-3), chat de componente e mensagens privadas continuam F2.
 - **Aceite:** ver `docs/aceite-mvp.md` — 14 critérios cobertos, 9 parciais, cada lacuna descrita. As duas **decisões** que divergem da letra são o 10 (o aviso "Carlos selecionou…" não existe: R-PRES-3) e o 15 (vale na configuração padrão da instância).
+
+### Mídia e integração (2026-10-17) — gravação por pessoa, sessões, eventos
+
+Implementado: `CallSession`, transcrição completa, gravação de áudio por pessoa com consentimento, `FileStore` em disco, `EventSink` por webhook, API `/v1` e o componente `ultima-recordings` (decisões D-40 a D-42; desenho e **próximos passos em `14-midia-e-integracao.md`, seção 14.9**). Não foi testado num Chrome real com microfone. Em aberto: D-43 (escala).

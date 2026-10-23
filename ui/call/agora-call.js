@@ -34,14 +34,14 @@ export class AgoraCall extends ReactiveComponent {
         const local = new ComponentRegistry();
         await Promise.all(LOCAL_COMPONENTS.map(path => local.registerFromUrl(new URL(`../../components/${path}`, import.meta.url))));
         const doc = await new MemoryStateStore().open(`call-${parent.id ?? 'local'}`);
-        Object.assign(doc, { conference: room, transcript: parent.transcript, transcriber: parent.transcriber });
+        Object.assign(doc, { conference: room, transcript: parent.transcript, transcriber: parent.transcriber, recorder: parent.recorder, recordings: parent.recordings });
         this.#workspace = new Workspace({ doc, registry: local, user: parent.user });
         view.workspace = this.#workspace;
 
         await registry.load('ultima-conference');
         const manifest = registry.getManifest('ultima-conference');
         const controls = this.#controls = document.createElement(manifest.tag);
-        controls.attach({ instanceId: 'call-controls', manifest, config: { tiles: false }, services: { conference: room, transcript: parent.transcript ?? undefined, transcriber: parent.transcriber ?? undefined } });
+        controls.attach({ instanceId: 'call-controls', manifest, config: { tiles: false }, services: { conference: room, transcript: parent.transcript ?? undefined, transcriber: parent.transcriber ?? undefined, recorder: parent.recorder ?? undefined, recordings: parent.recordings ?? undefined } });
         this.rootNode.querySelector('#controls').append(controls);
 
         //"Abrir transcrição" in the controls opens it as a window of the call, not in the shared workspace

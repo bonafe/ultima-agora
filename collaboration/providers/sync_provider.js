@@ -9,7 +9,7 @@
 //Status: 'connecting' | 'synced' | 'offline' | 'error'. Offline edits stay in the local doc and merge on reconnect.
 import { Y, syncProtocol, awarenessProtocol, encoding, decoding } from '../../vendor/yjs/yjs.js';
 
-const MSG_SYNC = 0, MSG_AWARENESS = 1, MSG_CONTROL = 3, MSG_CHAT = 4, MSG_SIGNAL = 5, MSG_TRANSCRIPT = 6;
+const MSG_SYNC = 0, MSG_AWARENESS = 1, MSG_CONTROL = 3, MSG_CHAT = 4, MSG_SIGNAL = 5, MSG_TRANSCRIPT = 6, MSG_CALL = 7;
 const NO_RETRY_CODES = new Set([4400, 4401, 4403, 4404]);       //bad request, auth failed, forbidden, unknown workspace
 
 export class SyncProvider {
@@ -174,6 +174,16 @@ export class SyncProvider {
         if (!this.#open || this.#status !== 'synced') return false;
         const message = encoding.createEncoder();
         encoding.writeVarUint(message, MSG_TRANSCRIPT);
+        encoding.writeVarString(message, JSON.stringify(request));
+        this.#send(message);
+        return true;
+    }
+
+    //Tells the server I joined or left the call ({ type: 'join' | 'leave' }): it is what gives a call a start, an end and the people in it.
+    sendCall(request) {
+        if (!this.#open || this.#status !== 'synced') return false;
+        const message = encoding.createEncoder();
+        encoding.writeVarUint(message, MSG_CALL);
         encoding.writeVarString(message, JSON.stringify(request));
         this.#send(message);
         return true;

@@ -12,6 +12,10 @@ import { MeshProvider } from '../../conference/mesh/mesh_provider.js';
 import { WhisperProvider } from '../../transcription/whisper/whisper_provider.js';
 import { Transcriber } from '../../transcription/transcriber.js';
 import { TranscriptClient } from './transcript_client.js';
+import { CallClient } from './call_client.js';
+import { RecordingApi } from './recording_api.js';
+import { Recorder } from '../../recording/recorder.js';
+import { CallRecorder } from '../../recording/call_recorder.js';
 
 const SAVE_DELAY_MS = 150;
 const PERSISTENCE = 'persistence';
@@ -78,6 +82,18 @@ export class YjsStateStore {
                 available: () => this.#sync !== null,
             });
             doc.transcriber = new Transcriber({ engine: this.#transcription ?? new WhisperProvider(), client: doc.transcript, room: doc.conference });
+
+            //The call as the server sees it (a start, an end, the people in it), and each person's recording of their own side
+            doc.call = new CallClient({ send: request => provider?.sendCall(request) ?? false });
+            let inCall = false;
+            doc.conference.on('change', () => {
+                if (doc.conference.joined === inCall) return;
+                inCall = doc.conference.joined;
+                if (inCall) doc.call.join(); else doc.call.leave();
+            });
+            doc.recordings = new RecordingApi({ baseUrl: this.#sync.url.replace(/^ws/, 'http'), workspaceId, session: id => this.#sync.session(id) });
+            doc.recorder = new CallRecorder({ recorder: new Recorder({ api: doc.recordings, storage: this.#backend }), room: doc.conference, call: doc.call });
+            doc.recorder.resume().catch(() => {});                 //send what an earlier page left unsent
         }
 
         let timer = null;
@@ -108,13 +124,14 @@ export class YjsStateStore {
                     if (session.role) doc.role = session.role;
                     return webSocketTransport(`${this.#sync.url}/${encodeURIComponent(workspaceId)}`, session.token);
                 },
-                onStatus: status => { refreshStatus(); if (status === 'synced') { doc.chat?.onConnected(); doc.transcript?.onConnected(); } },
+                onStatus: status => { refreshStatus(); if (status === 'synced') { doc.chat?.onConnected(); doc.transcript?.onConnected(); doc.call?.onConnected(); } },
                 onChat: event => doc.chat?.receive(event),
                 onTranscript: event => doc.transcript?.receive(event),
                 onSignal: event => { for (const fn of [...signalListeners]) fn(event); },
                 onControl: message => {
                     if (message.type === 'role') doc.role = message.role;
                     if (message.type === 'ice') doc.conference?.setIceServers(message.iceServers);
+                    if (message.type === 'call') doc.call?.receive(message);
                     if (message.type === 'closed' && message.code === 4403) doc.role = 'viewer';
                     doc._control(message);
                 },

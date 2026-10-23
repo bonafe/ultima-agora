@@ -28,6 +28,7 @@ Este conjunto de documentos detalha a proposta de produto do Ultima Agora. Ele s
 | 11 | [Roadmap, MVP e critérios de aceite](11-roadmap-mvp.md) | Entregas por fase, testes, riscos |
 | 12 | [Decisões em aberto](12-decisoes-em-aberto.md) | D-01 a D-NN, com recomendação |
 | 13 | [Glossário](13-glossario.md) | Termos |
+| 14 | [Mídia, gravação e integração](14-midia-e-integracao.md) | O que a chamada guarda, gravação por pessoa, eventos de saída, `FileStore`, escala |
 
 ## Resumo em uma página
 

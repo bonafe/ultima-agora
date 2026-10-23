@@ -119,7 +119,7 @@ Uma sessão é a atividade ao vivo num workspace.
 
 - **R-SES-1.** Uma sessão existe enquanto há pelo menos um participante conectado ao canal de presença do workspace. Não precisa ser criada explicitamente pelo usuário. Entrar no workspace é entrar na sessão.
 - **R-SES-2.** A presença é **efêmera** (ver 05.3) e não vai para o documento.
-- **R-SES-3.** O chat do workspace pertence ao workspace e persiste, com política de retenção configurável (D-11). A conferência de áudio e vídeo pertence à sessão e não persiste. Gravação, se existir, é um recurso à parte e fora do MVP.
+- **R-SES-3.** O chat do workspace pertence ao workspace e persiste, com política de retenção configurável (D-11). A conferência de áudio e vídeo pertence à sessão e não persiste. A **gravação** é um recurso à parte: cada pessoa grava o próprio lado, com consentimento, e o resultado vive no object store (não no documento); a chamada deixa também um registro (`CallSession`) e a transcrição. Ver [14](14-midia-e-integracao.md).
 - **R-SES-4.** O fim da sessão não altera o documento.
 
 ## 2.6 Identidade de participantes

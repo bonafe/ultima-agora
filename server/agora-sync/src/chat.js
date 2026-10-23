@@ -86,12 +86,13 @@ export class ChatLog {
     }
 
     //Returns { message, duplicate }. The same (author, clientId) twice is the same message: retries after a flaky network are safe.
-    add(author, { body, clientId }) {
+    //`extra` is for the caller's own fields (the transcript keeps when it was spoken, the language, the call): already validated
+    add(author, { body, clientId }, extra = {}) {
         if (typeof clientId !== 'string' || !clientId || clientId.length > 64) throw new ChatError('bad_request', 'clientId inválido.');
         const existing = this.#byClient.get(`${author.id}:${clientId}`);
         if (existing) return { message: existing, duplicate: true };
         const text = ChatLog.#clean(body);
-        const message = { id: randomUUID(), seq: this.#seq + 1, clientId, author: { id: author.id, name: author.name }, body: text, mentions: mentionsIn(text), createdAt: new Date(this.#now()).toISOString() };
+        const message = { id: randomUUID(), seq: this.#seq + 1, clientId, author: { id: author.id, name: author.name }, body: text, mentions: mentionsIn(text), createdAt: new Date(this.#now()).toISOString(), ...extra };
         this.#append({ t: 'msg', m: message });                // write first: if the disk refuses, nothing exists in memory either
         this.#insert(message);
         return { message, duplicate: false };
@@ -132,6 +133,9 @@ export class ChatLog {
         const slice = eligible.slice(-Math.max(1, Math.min(limit, 200)));
         return { messages: slice, hasMore: eligible.length > slice.length };
     }
+
+    //Every message in order (an export; the pages above are for the live view)
+    all() { return [...this.#messages]; }
 
     get size() { return this.#messages.length; }
 }

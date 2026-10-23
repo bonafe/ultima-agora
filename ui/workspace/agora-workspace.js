@@ -384,6 +384,8 @@ export class AgoraWorkspaceView extends ReactiveComponent {
                     conference: workspace.conference ?? undefined,
                     transcript: workspace.transcript ?? undefined,
                     transcriber: workspace.transcriber ?? undefined,
+                    recorder: workspace.recorder ?? undefined,
+                    recordings: workspace.recordings ?? undefined,
                     presence: {
                         //"I am editing here" (typing); cleared by passing null
                         setActivity: kind => workspace.doc.presence.setLocal({ activity: kind ? { instance: record.id, kind } : null }),

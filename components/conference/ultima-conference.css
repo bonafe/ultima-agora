@@ -28,6 +28,12 @@ button[aria-pressed="true"] { background: var(--agora-accent, #2a6df4); color: #
 :disabled { opacity: .5; cursor: default; }
 :focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: 1px; }
 #transcription { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding: 0 .5rem .5rem; }
+#recording { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding: 0 .5rem .5rem; }
+#recording[hidden], #record-consent[hidden] { display: none; }
+#record[aria-pressed="true"] { border-color: #d9381e; color: #d9381e; font-weight: 600; }
+#record-consent { flex: 1 1 100%; padding: .5rem; border: 1px solid var(--agora-border, #ccc); border-radius: .4rem; background: color-mix(in srgb, #d9381e 8%, transparent); }
+#record-consent p { margin: 0 0 .4rem; font-size: .85rem; }
+#r-status { flex: 1 1 100%; margin: 0; font-size: .8rem; opacity: .85; }
 #transcription select { font: inherit; padding: .3rem .4rem; border: 1px solid var(--agora-border, #ccc); border-radius: .3rem; background: transparent; color: inherit; }
 #t-status { flex-basis: 100%; margin: 0; font-size: .78rem; opacity: .8; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -40,6 +46,6 @@ button[aria-pressed="true"] { background: var(--agora-accent, #2a6df4); color: #
 
 @container (max-width: 420px) {
     #lobby fieldset { flex-direction: column; gap: .4rem; }
-    #controls button, #transcription button { flex: 1 1 auto; }
+    #controls button, #transcription button, #recording button { flex: 1 1 auto; }
     #tiles { grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); }
 }

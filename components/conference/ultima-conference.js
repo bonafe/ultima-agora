@@ -15,6 +15,7 @@ export default class UltimaConference extends AgoraComponent {
     #stop = null;
     #tiles = new Map();                     // clientId -> { element, video, ... }: kept between repaints so the video never flickers
     #errors = [];
+    #asking = false;                        // the consent question is showing
 
     constructor() {
         super({ templateUrl: './ultima-conference.html', shadowDom: true }, import.meta.url);
@@ -42,6 +43,14 @@ export default class UltimaConference extends AgoraComponent {
             stops.push(transcriber.onChange(() => this.#paint()));
         }
         if (transcript) stops.push(transcript.onChange(() => this.#paint()));
+        const recorder = this.recorder;
+        if (recorder) {
+            root.querySelector('#record').addEventListener('click', () => this.#toggleRecording());
+            root.querySelector('#record-yes').addEventListener('click', () => this.#startRecording());
+            root.querySelector('#record-no').addEventListener('click', () => { this.#asking = false; this.#paint(); });
+            root.querySelector('#open-recordings').addEventListener('click', () => this.dispatchEvent(new CustomEvent('palette-add', { bubbles: true, composed: true, detail: { type: 'ultima-recordings' } })));
+            stops.push(recorder.onChange(() => this.#paint()));
+        }
         this.#stop = () => stops.forEach(stop => stop());
         this.#paint();
     }
@@ -71,6 +80,22 @@ export default class UltimaConference extends AgoraComponent {
             this.#errors = errors.map(e => e.message);
         } catch (error) { this.#errors = [error.message]; }
         root.querySelector('#enter').disabled = false;
+        this.#paint();
+    }
+
+    //Recording starts only after the person says yes to the question: it is their own audio, and everyone will see the badge
+    async #toggleRecording() {
+        const recorder = this.recorder;
+        if (recorder.recording) { await recorder.stop(); this.#asking = false; }
+        else this.#asking = !this.#asking;
+        this.#paint();
+    }
+
+    async #startRecording() {
+        this.#asking = false;
+        this.#errors = [];
+        try { await this.recorder.start({ consented: true }); }
+        catch (error) { this.#errors = [error.message]; }
         this.#paint();
     }
 
@@ -120,6 +145,7 @@ export default class UltimaConference extends AgoraComponent {
             button.disabled = !room.canPublish;
         }
         this.#paintTranscription();
+        this.#paintRecording();
         root.querySelector('#tiles').toggleAttribute('hidden', !this.config.tiles);       // tiles: false = only the controls (the call window shows people as windows of its own)
         if (this.config.tiles) this.#paintTiles(people);
     }
@@ -138,6 +164,23 @@ export default class UltimaConference extends AgoraComponent {
         const text = transcriber.state === 'loading' ? `Carregando o modelo de transcrição… ${Math.round(transcriber.progress * 100)}% (só na primeira vez).`
             : transcriber.error ?? (!transcriber.supported ? transcriber.unsupportedReason : !transcriber.canWrite ? 'Seu papel não permite transcrever.' : T_STATUS[transcriber.state] ?? '');
         this.rootNode.querySelector('#t-status').textContent = text;
+    }
+
+    #paintRecording() {
+        const recorder = this.recorder;
+        const box = this.rootNode.querySelector('#recording');
+        box.toggleAttribute('hidden', !recorder);
+        if (!recorder) return;
+        const button = this.rootNode.querySelector('#record');
+        button.setAttribute('aria-pressed', String(recorder.recording));
+        button.textContent = recorder.recording ? 'Gravando: parar' : 'Gravar minha fala';
+        button.disabled = !recorder.supported || !this.conference.canPublish;
+        this.rootNode.querySelector('#record-consent').toggleAttribute('hidden', !this.#asking || recorder.recording);
+        const waiting = recorder.pending;
+        this.rootNode.querySelector('#r-status').textContent = !recorder.supported ? 'Este navegador não consegue gravar.'
+            : recorder.lastError ? `Problema ao enviar a gravação: ${recorder.lastError.message}${waiting ? ` (${waiting} trechos esperando)` : ''}`
+            : recorder.recording ? `Gravando o seu áudio e enviando ao workspace${waiting > 1 ? ` (${waiting} trechos esperando)` : ''}.`
+            : waiting ? `Enviando o final da gravação (${waiting} trechos)…` : '';
     }
 
     #paintTiles(people) {

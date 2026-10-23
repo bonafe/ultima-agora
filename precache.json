@@ -1,5 +1,5 @@
 {
- "version": "d48a71c7f105c42c",
+ "version": "1567e6eedfa9cf81",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -7,8 +7,10 @@
   "collaboration/document/memory_state_store.js",
   "collaboration/document/yjs_state_store.js",
   "collaboration/presence/presence.js",
+  "collaboration/providers/call_client.js",
   "collaboration/providers/chat_client.js",
   "collaboration/providers/indexeddb_persistence.js",
+  "collaboration/providers/recording_api.js",
   "collaboration/providers/sync_provider.js",
   "collaboration/providers/transcript_client.js",
   "collaboration/providers/yjs_store.js",
@@ -35,6 +37,10 @@
   "components/notes/ultima-notes.html",
   "components/notes/ultima-notes.js",
   "components/notes/ultima-notes.manifest.json",
+  "components/recordings/ultima-recordings.css",
+  "components/recordings/ultima-recordings.html",
+  "components/recordings/ultima-recordings.js",
+  "components/recordings/ultima-recordings.manifest.json",
   "components/table/ultima-table.css",
   "components/table/ultima-table.html",
   "components/table/ultima-table.js",

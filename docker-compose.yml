@@ -27,6 +27,9 @@ services:
       AGORA_ICE_SERVERS: ${AGORA_ICE_SERVERS:-}
       # Days to keep the call transcript (0 = forever)
       TRANSCRIPT_RETENTION_DAYS: ${TRANSCRIPT_RETENTION_DAYS:-0}
+      AGORA_WEBHOOK_URL: ${AGORA_WEBHOOK_URL:-}
+      AGORA_WEBHOOK_SECRET: ${AGORA_WEBHOOK_SECRET:-}
+      RECORDING_IDLE_SECONDS: ${RECORDING_IDLE_SECONDS:-120}
     volumes:
       - agora-data:/data
     restart: unless-stopped

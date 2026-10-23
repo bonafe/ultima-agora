@@ -16,6 +16,11 @@ try {
         transcriptRetentionDays: Number(process.env.TRANSCRIPT_RETENTION_DAYS ?? 0) || 0,
         iceServers,
         devAuth,
+        //What the host system hears about (calls, recordings): a signed webhook, retried until it answers (docs 09, 9.2 EventSink)
+        webhookUrl: process.env.AGORA_WEBHOOK_URL || null,
+        webhookSecret: process.env.AGORA_WEBHOOK_SECRET || null,
+        maxPartBytes: Number(process.env.MAX_RECORDING_PART_BYTES ?? 0) || undefined,
+        recordingIdleMs: (Number(process.env.RECORDING_IDLE_SECONDS ?? 0) || 120) * 1000,
         log: message => console.log(`[agora-sync] ${message}`),
     });
 } catch (error) {

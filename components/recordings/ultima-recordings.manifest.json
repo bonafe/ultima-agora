@@ -1,0 +1,10 @@
+{
+  "name": "ultima-recordings",
+  "tag": "ultima-recordings",
+  "title": "Gravações",
+  "version": "1.0.0",
+  "category": "collaboration",
+  "description": "O que foi gravado nas chamadas do workspace: o áudio de cada pessoa (cada um grava só o próprio), para ouvir ou baixar, e a transcrição em texto, legenda ou arquivo.",
+  "module": "./ultima-recordings.js",
+  "capabilities": ["recorder", "transcript", "resizable"]
+}

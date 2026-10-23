@@ -24,6 +24,7 @@ A primeira aplicação de referência é o [Inteligência Aberta](../inteligenci
   sinalização pelo `agora-sync` (D-36). Câmera e microfone **só ligam quando você marca**; sair ou desligar encerra a captura. Exigem
   `localhost` ou HTTPS (por isso o `https://` acima). Pensada para grupos pequenos (até ~4–6 pessoas); entre redes diferentes pode
   precisar de um TURN (`AGORA_ICE_SERVERS`). Tela compartilhada: próxima etapa.
+- **Gravação e integração** (docs 14): cada pessoa grava o próprio áudio, com consentimento visível, em pedaços enviados durante a chamada (componente **Gravações** para ouvir e baixar; transcrição em `.txt/.vtt/.srt`). O servidor avisa outros sistemas por webhook assinado (`AGORA_WEBHOOK_URL`, `AGORA_WEBHOOK_SECRET`). Depois de atualizar, `docker compose up -d --build`. Próximos passos (vídeo, S3/Postgres, escala): `docs/especificacao/14-midia-e-integracao.md`, seção 14.9.
 - **Transcrição da chamada** (botão “Transcrever minha fala” na chamada; componente `ultima-transcript`): Whisper **no navegador** (D-37). Cada
   pessoa é transcrita no próprio dispositivo, o áudio não sai dele e só o texto vai ao workspace, com a legenda no tile e o histórico
   por pessoa. Instale o modelo uma vez (fica fora do git, ~80 MB): `tools/baixar_modelo_whisper.py` (`tiny` ~41 MB, `small` ~250 MB).

@@ -49,6 +49,9 @@ export class Workspace {
     //The call transcript (TranscriptClient) and the person's own transcription switch (Transcriber), when the store provides them
     get transcript() { return this.#doc.transcript ?? null; }
     get transcriber() { return this.#doc.transcriber ?? null; }
+    //Recording of the person's own side of the call (CallRecorder) and the list of what was recorded (RecordingApi), when the store provides them
+    get recorder() { return this.#doc.recorder ?? null; }
+    get recordings() { return this.#doc.recordings ?? null; }
     //The client components receive as `this.domain`, already scoped to this workspace when the host supports it
     get domain() { return this.#domain?.forWorkspace?.(this.#id) ?? this.#domain; }
     get registry() { return this.#registry; }

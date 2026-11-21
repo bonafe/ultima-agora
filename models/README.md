@@ -9,3 +9,11 @@ tools/baixar_modelo_whisper.py small      # ~250 MB, mais preciso, pesado
 ```
 
 O app lê de `/models/whisper-<tamanho>/` na própria origem (nada de CDN: funciona sem internet, D-37).
+
+## Modelo de decisão de comandos (Laya)
+
+```
+tools/baixar_modelo_laya.py               # laya-en-int4 (~262 MB), em models/laya-en-int4/
+```
+
+Roda no navegador (worker + ONNX Runtime Web, `voice/interpreters/model/laya/`); fica no Cache Storage depois do primeiro uso.

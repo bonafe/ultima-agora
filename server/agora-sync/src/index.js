@@ -19,6 +19,11 @@ try {
         //What the host system hears about (calls, recordings): a signed webhook, retried until it answers (docs 09, 9.2 EventSink)
         webhookUrl: process.env.AGORA_WEBHOOK_URL || null,
         webhookSecret: process.env.AGORA_WEBHOOK_SECRET || null,
+        //The decision model that turns a sentence into a command (server/agora-model, or any service that speaks its /choose contract)
+        modelUrl: process.env.AGORA_MODEL_URL || null,
+        modelToken: process.env.AGORA_MODEL_TOKEN || null,
+        modelTimeoutMs: Number(process.env.AGORA_MODEL_TIMEOUT_MS ?? 0) || 10_000,
+        modelPerMinute: Number(process.env.AGORA_MODEL_PER_MINUTE ?? 0) || 30,
         maxPartBytes: Number(process.env.MAX_RECORDING_PART_BYTES ?? 0) || undefined,
         recordingIdleMs: (Number(process.env.RECORDING_IDLE_SECONDS ?? 0) || 120) * 1000,
         log: message => console.log(`[agora-sync] ${message}`),

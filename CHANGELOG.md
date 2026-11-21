@@ -2,6 +2,20 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (modelo de decisão no servidor)
+
+### Added
+- **Modelo de decisão fora do navegador (D-44)**, para aparelhos onde o do navegador é lento ou não roda: serviço Python **`server/agora-model`** (Laya ONNX em CPU ou GPU, ~0,7 s/frase em CPU contra 2–3 s no navegador; imagem Docker, `docker compose --profile model`, `docker-compose.gpu.yml`) e a rota `POST /v1/workspaces/:id/decide` no `agora-sync`, que autentica pelo token, limita por pessoa (30/min) e repassa **sem guardar nem registrar o texto**.
+- **Apontável para outro lugar**: `AGORA_MODEL_URL` aceita qualquer serviço que fale o contrato `POST /choose`; o `agora-model` tem o backend `openai_compat` (gateway do inteligencia-aberta, vLLM ou API externa; chave só no servidor).
+- No app: `?model=off|remote|local|auto` (padrão `off`). `RemoteChoiceBackend`, `FallbackBackend` (servidor → navegador; um que falha é pulado por um tempo), `ChainInterpreter` (as regras vão primeiro; o modelo só recebe o que elas não entenderam e só **sugere**; modelo fora do ar = "não entendi", nada quebra).
+
+## Unreleased (modelo de decisão no navegador)
+
+### Added
+- **Modelo de decisão de comandos rodando no navegador, trocável**: `ModelInterpreter` (`voice/interpreters/model/`) escolhe o comando falando só com o contrato `ChoiceBackend` (`load`/`choose`/`dispose`); o primeiro backend é o **Laya** (ModernBERT int4 em ONNX) num worker com onnxruntime-web (`vendor/ort`, `tools/vendor-ort`), tokenizador BPE próprio em JS (idêntico ao `tokenizers` em 57 casos) e pesos no Cache Storage (`tools/baixar_modelo_laya.py` → `models/laya-en-int4/`, fora do git). Os argumentos ("a tabela", "para a esquerda") continuam vindo das regras: `RulesInterpreter.extract(comando, frase)`.
+- `tools/verificar_acoplamento.py`: só `voice/interpreters/model/laya/` pode importar o ONNX Runtime — trocar o modelo não toca no interpretador, no serviço de voz nem nos comandos.
+- `tools/spike-laya/browser.sh` mede carga, latência e acerto no navegador (F0b em `docs/spike-laya.md`): ~2–3 s por frase com threads (COOP/COEP) e ~7 s sem; acerto 23 % zero-shot — **ainda não ligado ao app**, as regras seguem como interpretador.
+
 ## Unreleased (convidar por QR code)
 
 ### Added

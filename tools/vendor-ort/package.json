@@ -1,0 +1,8 @@
+{
+  "name": "agora-vendor-ort",
+  "private": true,
+  "description": "Copies the prebuilt ONNX Runtime Web (CPU/WASM) into vendor/ort (D-06): the runtime of the in-browser decision model (voice/interpreters/model). Run once per upgrade; not needed to run the app.",
+  "type": "module",
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": { "onnxruntime-web": "1.31.0-dev.20260914-8d85527a0" }
+}

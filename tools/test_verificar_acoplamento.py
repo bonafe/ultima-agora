@@ -46,6 +46,14 @@ class Acoplamento(unittest.TestCase):
         r = rodar({"core/doc.js": "// the domain defines Entity and Claim, not the core\n/* Evidence */\nconst label = 'Empresa';"})
         self.assertEqual(r.returncode, 0, r.stderr)
 
+    def test_onnx_so_no_backend_do_modelo(self):
+        ok = "import * as ort from '../../../../vendor/ort/ort.wasm.min.mjs';"
+        self.assertEqual(rodar({"voice/interpreters/model/laya/laya_worker.js": ok}).returncode, 0)
+        r = rodar({"voice/interpreters/model/model_interpreter.js": ok})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("ONNX", r.stderr)
+        self.assertEqual(rodar({"voice/service.js": "import ort from 'onnxruntime-web';"}).returncode, 1)
+
     def test_vendor_pode_ter_yjs(self):
         self.assertEqual(rodar({"vendor/yjs/yjs.js": "import 'yjs';"}).returncode, 0)
 

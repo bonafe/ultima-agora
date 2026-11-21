@@ -1,0 +1,59 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Laya no navegador (spike)</title>
+<pre id="out">carregando…</pre>
+<script type="module">
+//Spike F0b: the decision model running IN the browser (the first spike, docs/spike-laya.md, ran in Python). Serve the repo root and open
+///tools/spike-laya/browser.html (needs models/laya-en-int4: tools/baixar_modelo_laya.py). Reports load time, latency and accuracy over the
+//130 pt-BR phrases, through the SAME ModelInterpreter/backend the app uses. ?threads=N, ?limit=N. tools/spike-laya/browser.sh runs it headless.
+import { LayaBackend } from '../../voice/interpreters/model/laya/laya_backend.js';
+import { ModelInterpreter } from '../../voice/interpreters/model/model_interpreter.js';
+import { RulesInterpreter } from '../../voice/interpreters/rules.js';
+import { createCommandRegistry } from '../../core/commands/catalog.js';
+
+const out = document.getElementById('out');
+const log = line => { out.textContent += `\n${line}`; };
+const params = new URLSearchParams(location.search);
+const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+const quantile = (values, q) => [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * q))];
+
+try {
+    const backend = new LayaBackend({ threads: params.has('threads') ? Number(params.get('threads')) : null });
+    const interpreter = new ModelInterpreter({ backend, commands: createCommandRegistry(), extractor: new RulesInterpreter(), floor: 0 });
+    log(`cross-origin isolated: ${crossOriginIsolated}; cores: ${navigator.hardwareConcurrency}`);
+    const loaded = await backend.load({ onProgress: ({ loaded, total }) => { out.textContent = `baixando ${(loaded / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB`; } });
+    log(`load: ${loaded.loadMs} ms (${loaded.source})`);
+
+    const fixture = await (await fetch('../../tests/fixtures/voice_commands_pt.json')).json();
+    let rows = Object.entries(fixture).flatMap(([command, phrases]) => phrases.map(text => ({ text, command })));
+    if (params.has('limit')) rows = rows.slice(0, Number(params.get('limit')));
+    await interpreter.interpret('abre as notas');                                    // warm-up (first pass compiles kernels)
+    await interpreter.interpret('adiciona uma tabela'); const probe = interpreter.lastRun.scores.map(s => `${s.id}=${s.p.toFixed(4)}`).join(' ');
+    const modelMs = [], wallMs = [], confRight = [], confWrong = [];
+    let right = 0;
+    const mistakes = [];
+    for (const { text, command } of rows) {
+        const started = performance.now();
+        const call = await interpreter.interpret(text);
+        wallMs.push(performance.now() - started);
+        modelMs.push(interpreter.lastRun.ms);
+        const guess = interpreter.lastRun.winner === 'none' ? 'none' : call?.command;
+        const hit = guess === command; right += hit;
+        (hit ? confRight : confWrong).push(interpreter.lastRun.p);
+        if (!hit && mistakes.length < 12) mistakes.push(`${text} -> ${guess} (${interpreter.lastRun.p.toFixed(2)}), wanted ${command}`);
+    }
+    const mean = values => (values.reduce((a, b) => a + b, 0) / (values.length || 1)).toFixed(2);
+    const result = {
+        backend: backend.id, isolated: crossOriginIsolated, cores: navigator.hardwareConcurrency, loadMs: loaded.loadMs, source: loaded.source,
+        phrases: rows.length, accuracy: +(right / rows.length).toFixed(3),
+        probe, inferenceMs: { median: Math.round(median(modelMs)), p95: Math.round(quantile(modelMs, 0.95)) },
+        endToEndMs: { median: Math.round(median(wallMs)), p95: Math.round(quantile(wallMs, 0.95)) },
+        confidence: { right: mean(confRight), wrong: mean(confWrong) }, mistakes,
+    };
+    log(JSON.stringify(result, null, 1));
+    document.title = `DONE ${JSON.stringify(result)}`;
+} catch (error) {
+    log(`FALHOU: ${error.stack ?? error}`);
+    document.title = `FAIL ${error.message}`;
+}
+</script>

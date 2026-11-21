@@ -84,34 +84,55 @@ const cut = (text, match, name) => {
 
 export class RulesInterpreter {
     interpret(text, ctx = {}) {
+        const sentence = this.#prepare(text);
+        if (!sentence) return null;
+        //Titles/aliases of actions on screen ("mostrar como grafo") are commands of their own
+        for (const title of ctx.actionTitles ?? []) if (fold(title).trim() === sentence.folded) return { command: 'run-action', args: { action: title }, confidence: 1 };
+        for (const [command, pattern] of RULES) {
+            const args = this.#match(command, pattern, sentence);
+            if (args) return { command, args, confidence: 1 };
+        }
+        return null;
+    }
+
+    //Only the arguments of a command somebody ELSE already chose (a decision model): the same patterns, restricted to that command.
+    //Returns {} when the command takes none or no pattern fits: the command then reports what is missing.
+    extract(command, text, ctx = {}) {
+        const sentence = this.#prepare(text);
+        if (!sentence) return {};
+        if (command === 'run-action') for (const title of ctx.actionTitles ?? []) if (fold(title).trim() === sentence.folded) return { action: title };
+        for (const [name, pattern] of RULES) {
+            if (name !== command) continue;
+            const args = this.#match(name, pattern, sentence);
+            if (args) return args;
+        }
+        return {};
+    }
+
+    //Interjections before ("ops, ...", "pode ...") and after ("... por favor") are cut off; the positions stay aligned with the original
+    #prepare(text) {
         let original = clean(String(text ?? ''));
         if (!original) return null;
         let folded = fold(original);
-
-        //Titles/aliases of actions on screen ("mostrar como grafo") are commands of their own
-        for (const title of ctx.actionTitles ?? []) if (fold(title).trim() === folded) return { command: 'run-action', args: { action: title }, confidence: 1 };
-
-        //Interjections before ("ops, ...", "pode ...") and after ("... por favor") are cut off; the positions stay aligned with the original
         for (let lead = LEAD.exec(folded); lead; lead = LEAD.exec(folded)) { folded = folded.slice(lead[0].length); original = original.slice(lead[0].length); }
         const trail = TRAIL.exec(folded);
         if (trail) { folded = folded.slice(0, trail.index); original = original.slice(0, trail.index); }
-        if (!folded) return null;
+        return folded ? { original, folded } : null;
+    }
 
-        for (const [command, pattern] of RULES) {
-            const match = pattern.exec(folded);
-            if (!match) continue;
-            const args = {};
-            for (const name of Object.keys(match.groups ?? {})) {
-                const value = cut(original, match, name);
-                if (value) args[name] = name === 'side' ? SIDE[fold(value)] : value;
-            }
-            if (command === 'move' && !args.side) args.side = /cima/.test(folded) ? 'top' : 'bottom';
-            if (command === 'add') Object.assign(args, placement(args.what));
-            if (command === 'run-action') { args.action = 'mostrar como grafo'; delete args.view; }
-            if (command === 'duplicate') args.what ??= 'esta janela';
-            return { command, args, confidence: 1 };
+    #match(command, pattern, { original, folded }) {
+        const match = pattern.exec(folded);
+        if (!match) return null;
+        const args = {};
+        for (const name of Object.keys(match.groups ?? {})) {
+            const value = cut(original, match, name);
+            if (value) args[name] = name === 'side' ? SIDE[fold(value)] : value;
         }
-        return null;
+        if (command === 'move' && !args.side) args.side = /cima/.test(folded) ? 'top' : 'bottom';
+        if (command === 'add') Object.assign(args, placement(args.what));
+        if (command === 'run-action') { args.action = 'mostrar como grafo'; delete args.view; }
+        if (command === 'duplicate') args.what ??= 'esta janela';
+        return args;
     }
 }
 

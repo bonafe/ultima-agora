@@ -41,3 +41,26 @@ A gramática foi ampliada olhando para as 130 frases acima (interjeições como 
 Dois ajustes (“me traz”, “se chamam”) vieram dos erros do conjunto reservado; ele já não é mais virgem para esses casos.
 
 As 7 conversas tomadas por comando são frases como "põe a mesa para o almoço", "fecha a porta", "tira uma foto da lousa", "me dá um minuto". Elas só chegam ao interpretador **depois da palavra de ativação** ("Ágora, …"), e mesmo então o comando não acha nada que conheça ("Não achei janela 'porta'", "Não conheço 'a mesa'"), então **nada muda no workspace** e nenhuma pergunta de confirmação é feita (teste automatizado). É ruído na tela, não dano. Se incomodar, o próximo passo é exigir que o argumento cite um componente ou janela conhecidos já no interpretador.
+
+## F0b — o mesmo modelo rodando NO navegador (2026-11-21)
+
+O spike acima rodou em Python (ONNX Runtime nativo); isto mede o Laya EN int4 de fato no navegador: worker + onnxruntime-web (WASM, CPU),
+tokenizador BPE próprio em JS, mesmos 17 comandos do catálogo, 130 frases pt-BR. Reproduzir: `tools/baixar_modelo_laya.py` e `tools/spike-laya/browser.sh`.
+Máquina: 6 núcleos; Chrome headless.
+
+| | Python nativo (6 threads) | Navegador, 1 thread (sem COOP/COEP) | Navegador, com threads (COOP/COEP) |
+|---|---|---|---|
+| inferência por frase (mediana) | ~0,8 s (opções longas, 195 tokens) | **7,1 s** | **2,1–2,8 s** (p95 ~2,4–4,5 s) |
+| carga dos 262 MB | — | ~2,6–5 s (do servidor local) | idem; depois vem do Cache Storage |
+| acerto do comando | 40,8 % (melhor caso) | — | **23,1 %** (130 frases; opções descritivas completas) |
+
+- **Funciona no navegador e é fiel**: as probabilidades batem com as do ONNX Runtime em Python (ex.: `run-action` 0,387 vs 0,396 para a mesma entrada); o tokenizador dá os mesmos ids do `tokenizers` (57 casos, teste automático).
+- **Sem isolamento de origem não há threads**: 7 s por frase. O servidor que hospeda o app precisa enviar `Cross-Origin-Opener-Policy: same-origin` e `Cross-Origin-Embedder-Policy: require-corp` (o `tools/spike-laya/serve_isolated.py` mostra como). Mesmo com threads o WASM é ~3x mais lento que o nativo.
+- **Latência ainda alta para voz** (2–3 s depois da transcrição) e **acerto baixo**: a conclusão do spike não muda (as regras seguem como base; o modelo só poderia *sugerir*). A medição de F0b serve de linha de base para trocar de modelo: `ChoiceBackend` (`voice/interpreters/model/choice_backend.js`) é o único ponto de troca.
+
+## F0c — o mesmo modelo no servidor (2026-11-21)
+
+`server/agora-model` (Python + onnxruntime, CPU 6 threads) atrás do `agora-sync`, chamado pelo `RemoteChoiceBackend` do app: ~0,6–0,7 s por frase de ponta a ponta
+(modelo 600–710 ms; `agora-sync` + rede local somam ~50 ms), contra 2,1–2,8 s no navegador com threads e ~7 s sem. As probabilidades são as mesmas do navegador
+(`adiciona uma tabela` → `run-action` 0,40 nos dois) e a entrada do modelo é idêntica byte a byte (teste de paridade). **O acerto não muda** (mesmo modelo): mover para o servidor
+resolve latência e alcance de aparelhos, não a qualidade. Uma GPU (`onnxruntime-gpu`, `docker-compose.gpu.yml`) ainda não foi medida.

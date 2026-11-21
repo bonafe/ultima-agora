@@ -12,6 +12,8 @@ import '../call/agora-call.js';
 import '../voice/agora-voice.js';
 import '../invite/agora-invite.js';
 import { VoiceCommandService } from '../../voice/service.js';
+import { createInterpreter } from '../../voice/interpreters/select.js';
+import { createCommandRegistry } from '../../core/commands/catalog.js';
 import { loadTheme } from '../settings/agora-settings.js';
 
 const STATUS_TEXT = { synced: 'Salvo', saving: 'Salvando…', error: 'Erro', offline: 'Offline (salvo aqui)', connecting: 'Conectando…' };
@@ -272,7 +274,16 @@ export class AgoraShell extends ReactiveComponent {
     async #mountVoice(workspace) {
         const bar = this.#$('agora-voice');
         await bar.whenLoaded();
-        const service = new VoiceCommandService({ workspace });
+        //Which interpreter: rules only unless the person asked for a model with ?model=remote|local|auto (voice/interpreters/select.js).
+        //A model only ever suggests what the rules did not understand, and one that fails just leaves the rules' "não entendi".
+        const commands = createCommandRegistry();
+        const mode = new URLSearchParams(location.search).get('model') ?? 'off';
+        let warned = false;
+        const interpreter = await createInterpreter({
+            mode, commands, workspaceId: workspace.id, endpoint: this.#host.decisionEndpoint?.(workspace.id) ?? null,
+            onError: error => { console.warn('[voice] model:', error.message); if (!warned) { warned = true; this.notify(`Modelo de comandos indisponível (${error.message}). Continuo só com as regras.`, 'warning'); } },
+        });
+        const service = new VoiceCommandService({ workspace, commands, interpreter });
         bar.bind({ workspace, service });
         this.#cleanup.push(() => bar.unbind());
     }

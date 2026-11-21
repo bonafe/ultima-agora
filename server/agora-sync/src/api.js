@@ -7,9 +7,12 @@
 //  GET  /v1/workspaces/:ws/recordings                       the list (metadata + a signed link for each finished one)
 //  GET  /v1/workspaces/:ws/recordings/:id/media?exp&sig     the file (signed link, so <audio src> works; supports Range)
 //  GET  /v1/workspaces/:ws/transcript?format=jsonl|json|txt|vtt|srt[&session=<id>]
+//  GET  /v1/workspaces/:ws/decide                           is a decision model available? { available, model }
+//  POST /v1/workspaces/:ws/decide                           { question?, options:[{id,text}], state } -> { scores:[{id,p}], ms, model } (decide.js)
 import { randomUUID } from 'node:crypto';
 import { verifyToken } from './auth.js';
 import { FileStoreError } from './files.js';
+import { DecideError } from './decide.js';
 
 const WRITERS = new Set(['owner', 'editor', 'participant']);         //viewers listen: they do not record
 const KINDS = new Set(['audio', 'video', 'screen']);
@@ -45,7 +48,7 @@ export function formatTranscript(segments, format, base) {
 }
 const CONTENT_TYPES = { json: 'application/json', jsonl: 'application/x-ndjson', txt: 'text/plain; charset=utf-8', vtt: 'text/vtt; charset=utf-8', srt: 'application/x-subrip; charset=utf-8' };
 
-export function createApi({ key, files, events, roomFor, listWorkspaces = () => [], log = () => {}, maxPartBytes = 8 * 1024 * 1024, maxRecordingBytes = 2 * 1024 ** 3, idleMs = 120_000, now = () => Date.now() }) {
+export function createApi({ key, files, events, roomFor, listWorkspaces = () => [], decide = null, log = () => {}, maxPartBytes = 8 * 1024 * 1024, maxRecordingBytes = 2 * 1024 ** 3, idleMs = 120_000, now = () => Date.now() }) {
     const json = (response, status, body, headers = {}) => { response.writeHead(status, { 'content-type': 'application/json', ...headers }); response.end(JSON.stringify(body)); };
 
     const authorize = (request, workspace) => {
@@ -204,6 +207,14 @@ export function createApi({ key, files, events, roomFor, listWorkspaces = () => 
         return stale.length;
     }
 
+    //Anyone in the workspace may ask: what a command does is checked again, with their role, when it runs (R-AG-3)
+    async function decideRoute(request, response, workspace) {
+        const claims = authorize(request, workspace);
+        if (!decide) throw new DecideError(503, 'no_model', 'Este servidor não tem um modelo de decisão configurado.');
+        if (request.method === 'GET') return json(response, 200, await decide.status());
+        json(response, 200, await decide.choose(claims, await readJson(request)));
+    }
+
     //true when the request was ours
     async function handle(request, response, url) {
         const match = /^\/v1\/workspaces\/([^/]+)\/(.*)$/.exec(url.pathname);
@@ -224,10 +235,12 @@ export function createApi({ key, files, events, roomFor, listWorkspaces = () => 
             else if ((parts = /^recordings\/([^/]+)\/complete$/.exec(rest)) && method === 'POST') await complete(request, response, workspace, parts[1]);
             else if ((parts = /^recordings\/([^/]+)\/media$/.exec(rest)) && method === 'GET') await media(request, response, workspace, parts[1], url);
             else if (rest === 'transcript' && method === 'GET') await transcript(request, response, workspace, url);
+            else if (rest === 'decide' && (method === 'GET' || method === 'POST')) await decideRoute(request, response, workspace);
             else throw new ApiError(404, 'not_found', 'Rota desconhecida.');
         } catch (error) {
             if (response.headersSent) { response.destroy(); return true; }
             if (error instanceof ApiError) json(response, error.status, { error: { code: error.code, message: error.message } });
+            else if (error instanceof DecideError) json(response, error.status, { error: { code: error.code, message: error.message } });
             else if (error instanceof FileStoreError) json(response, error.code === 'bad_request' ? 400 : 500, { error: { code: error.code, message: error.message } });
             else { log(`api error: ${error.message}`); json(response, 500, { error: { code: 'internal', message: 'Erro interno.' } }); }
         }

@@ -24,6 +24,15 @@ import { Transcriber } from '../transcription/transcriber.js';
 import { createCommandRegistry } from '../core/commands/catalog.js';
 import { resolveInstance, resolveType } from '../core/commands/resolve.js';
 import { RulesInterpreter } from '../voice/interpreters/rules.js';
+import { ModelInterpreter, NONE } from '../voice/interpreters/model/model_interpreter.js';
+import { assertChoiceBackend } from '../voice/interpreters/model/choice_backend.js';
+import { ByteLevelBpe } from '../voice/interpreters/model/laya/bpe_tokenizer.js';
+import { buildChoiceInput, temperatureFor, softmax } from '../voice/interpreters/model/laya/laya_input.js';
+import { LayaBackend } from '../voice/interpreters/model/laya/laya_backend.js';
+import { RemoteChoiceBackend, RemoteModelError } from '../voice/interpreters/model/remote/remote_backend.js';
+import { FallbackBackend } from '../voice/interpreters/model/fallback_backend.js';
+import { ChainInterpreter } from '../voice/interpreters/chain.js';
+import { createInterpreter } from '../voice/interpreters/select.js';
 import { VoiceCommandService } from '../voice/service.js';
 import { TranscriptClient } from '../collaboration/providers/transcript_client.js';
 import { uuid } from '../core/ids.js';
@@ -3223,6 +3232,202 @@ const voiceWorkspace = async ({ role = 'owner' } = {}) => {
     doc.role = role;
     return new Workspace({ doc, registry, user: { id: 'urn:user:voice' } });
 };
+
+//--- decision model (voice/interpreters/model): the model is swappable behind ChoiceBackend --------------------------------------
+
+//A backend that never loads anything: scores whatever `pick(sentence, options)` says, so the interpreter is tested without a model
+const fakeBackend = pick => ({
+    id: 'fake', state: 'ready', calls: [],
+    async load() { return { loadMs: 0, source: 'cache' }; },
+    async choose({ options, state }) {
+        this.calls.push({ options, state });
+        const [winner, p] = pick(state, options);
+        return { scores: options.map(option => ({ id: option.id, p: option.id === winner ? p : (1 - p) / (options.length - 1) })), ms: 1 };
+    },
+    dispose() {},
+});
+
+test('voice model: ModelInterpreter offers every catalog command to ANY backend, and cuts the phrases out with the rules', async () => {
+    const backend = fakeBackend(sentence => [/tabela/.test(sentence) ? 'add' : 'undo', 0.9]);
+    const model = new ModelInterpreter({ backend, commands: createCommandRegistry(), extractor: new RulesInterpreter() });
+    const call = await model.interpret('adiciona notas à direita da tabela');
+    assert(call.command === 'add' && call.confidence === 0.9, JSON.stringify(call));
+    assert(call.args.what === 'notas' && call.args.side === 'right' && call.args.near === 'tabela', `args: ${JSON.stringify(call.args)}`);
+    const { options } = backend.calls[0];
+    const named = createCommandRegistry().list().filter(spec => spec.phrases.length).map(spec => spec.name);
+    assert(named.every(name => options.some(option => option.id === name)), 'every command with examples is an option');
+    assert(options.at(-1).id === NONE, '"conversation" is always the last option');
+    assert(model.lastRun.backend === 'fake' && model.lastRun.winner === 'add', JSON.stringify(model.lastRun));
+    assert((await model.interpret('desfaz')).command === 'undo');
+});
+
+test('voice model: "conversation" and low confidence are "não entendi", and the backend contract is checked', async () => {
+    const commands = createCommandRegistry();
+    assert(await new ModelInterpreter({ backend: fakeBackend(() => [NONE, 0.95]), commands }).interpret('bom dia pessoal') === null, 'conversation is not a command');
+    assert(await new ModelInterpreter({ backend: fakeBackend(() => ['add', 0.1]), commands, floor: 0.2 }).interpret('hmm') === null, 'below the floor');
+    assert(await new ModelInterpreter({ backend: fakeBackend(() => ['add', 0.9]), commands }).interpret('   ') === null, 'empty sentence');
+    let threw = false;
+    try { new ModelInterpreter({ backend: { choose() {} }, commands }); } catch { threw = true; }
+    assert(threw, 'something that is not a ChoiceBackend is refused up front');
+    assert(assertChoiceBackend(new LayaBackend()).id === 'laya-en-int4', 'LayaBackend honours the contract');
+});
+
+test('voice model: a model-chosen command runs through the voice service, and a unsure one is ASKED, never run', async () => {
+    const make = async (backend) => {
+        const workspace = await voiceWorkspace();
+        const service = new VoiceCommandService({ workspace, interpreter: new ModelInterpreter({ backend, commands: createCommandRegistry(), extractor: new RulesInterpreter() }) });
+        return { workspace, service };
+    };
+    const sure = await make(fakeBackend(() => ['add', 0.95]));
+    const done = await sure.service.handle('adiciona uma tabela', { source: 'typed' });
+    assert(done.type === 'done' && sure.workspace.describe().instances.some(item => item.type === 'ultima-table'), `${done.type}: ${done.message}`);
+    const unsure = await make(fakeBackend(() => ['add', 0.4]));
+    const asked = await unsure.service.handle('adiciona uma tabela', { source: 'typed' });
+    assert(asked.type === 'confirm' && unsure.workspace.describe().instances.length === 0, 'asked, nothing was added');
+});
+
+test('voice rules: extract() takes the arguments of a command somebody else chose, with the same patterns', () => {
+    const rules = new RulesInterpreter();
+    assert(JSON.stringify(rules.extract('move', 'põe as notas embaixo')) === JSON.stringify({ what: 'as notas', side: 'bottom' }), JSON.stringify(rules.extract('move', 'põe as notas embaixo')));
+    assert(rules.extract('rename', 'renomeia a tabela para Clientes').name === 'Clientes');
+    assert(JSON.stringify(rules.extract('undo', 'desfaz')) === '{}', 'a command with no arguments');
+    assert(JSON.stringify(rules.extract('remove', 'bom dia')) === '{}', 'a sentence that does not fit that command yields nothing, never another command\'s arguments');
+});
+
+//--- the model on the SERVER (agora-sync /decide), the fallback between backends, and the rules-first chain -------------------------------
+
+//A fake agora-sync: `routes` answers { status, body } for GET/POST /decide; records every request
+const fakeDecide = (handler) => {
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+        const call = { url, method: init.method, auth: init.headers.authorization, body: init.body ? JSON.parse(init.body) : null };
+        calls.push(call);
+        const { status = 200, body = {} } = await handler(call, calls.length);
+        return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    };
+    return { fetchImpl, calls };
+};
+const remoteWith = (fake, extra = {}) => {
+    let issued = 0;
+    const backend = new RemoteChoiceBackend({ baseUrl: 'http://sync.test/', workspaceId: 'ws 1', session: async () => ({ token: `tok${++issued}` }), fetchImpl: fake.fetchImpl, ...extra });
+    return { backend, issued: () => issued };
+};
+const SCORED = body => ({ scores: body.options.map((o, i) => ({ id: o.id, p: i === 0 ? 0.9 : 0.1 / (body.options.length - 1) })), ms: 7, model: 'srv-1' });
+
+test('voice model: the remote backend asks agora-sync with the session token, reuses it, and renews it once when it expired', async () => {
+    const fake = fakeDecide(({ method, auth, body }) => (method === 'GET' ? { body: { available: true, model: 'srv-1' } } : auth === 'Bearer tok1' && fake.calls.length > 2 ? { status: 401 } : { body: SCORED(body) }));
+    const { backend, issued } = remoteWith(fake);
+    assertChoiceBackend(backend);
+    const info = await backend.load();
+    assert(info.source === 'server' && backend.state === 'ready' && backend.id === 'remote:srv-1', JSON.stringify(info));
+    assert(fake.calls[0].url === 'http://sync.test/v1/workspaces/ws%201/decide', fake.calls[0].url);
+    const options = [{ id: 'add', text: 'a' }, { id: 'undo', text: 'b' }];
+    const first = await backend.choose({ options, state: 'põe uma tabela' });
+    assert(first.scores[0].id === 'add' && first.ms === 7 && fake.calls[1].body.state === 'põe uma tabela', JSON.stringify(first));
+    assert(issued() === 1, 'one token for several calls');
+    await backend.choose({ options, state: 'outra' });                           // the 401 branch: asks for a fresh token and retries
+    assert(issued() === 2 && fake.calls.at(-1).auth === 'Bearer tok2', `renewed: ${issued()} ${fake.calls.at(-1).auth}`);
+});
+
+test('voice model: the remote backend tells "no model here" (not retryable) from "the server is down" (retryable)', async () => {
+    const none = remoteWith(fakeDecide(() => ({ body: { available: false } }))).backend;
+    const error = await none.load().then(() => null, e => e);
+    assert(error instanceof RemoteModelError && error.retryable === false && none.state === 'failed', String(error));
+    const down = remoteWith({ fetchImpl: async () => { throw new TypeError('network'); }, calls: [] }).backend;
+    const offline = await down.load().then(() => null, e => e);
+    assert(offline.retryable === true && /servidor/.test(offline.message), String(offline));
+    const limited = remoteWith(fakeDecide(({ method }) => (method === 'GET' ? { body: { available: true } } : { status: 429, body: { error: { code: 'rate_limited', message: 'Muitos pedidos' } } }))).backend;
+    await limited.load();
+    const slow = await limited.choose({ options: [{ id: 'a', text: 'a' }, { id: 'b', text: 'b' }], state: 'x' }).then(() => null, e => e);
+    assert(slow.status === 429 && slow.message === 'Muitos pedidos', String(slow));
+});
+
+test('voice model: FallbackBackend answers with the next backend when one fails, skips it for a while, and never retries "no model"', async () => {
+    let clock = 0;
+    const flaky = { id: 'server', state: 'ready', calls: 0, fail: new RemoteModelError('down', { retryable: true }), async load() {}, async choose() { this.calls++; if (this.fail) throw this.fail; return { scores: [{ id: 'a', p: 1 }], ms: 1 }; }, dispose() {} };
+    const local = fakeBackend(() => ['a', 0.7]);
+    local.id = 'local';
+    const both = new FallbackBackend([flaky, local], { coolOffMs: 1000, now: () => clock });
+    const question = { options: [{ id: 'a', text: 'a' }, { id: 'b', text: 'b' }], state: 'x' };
+    assert((await both.choose(question)).backend === 'local' && both.id === 'local', 'the server failed: the browser answered the same question');
+    assert((await both.choose(question)).backend === 'local' && flaky.calls === 1, 'skipped while cooling off');
+    clock = 2000; flaky.fail = null;
+    assert((await both.choose(question)).backend === 'server', 'tried again after the cool-off');
+    const gone = { ...flaky, id: 'gone', fail: new RemoteModelError('no model', { retryable: false }), calls: 0 };
+    const once = new FallbackBackend([gone, local], { coolOffMs: 1, now: () => clock });
+    await once.choose(question); clock += 10_000; await once.choose(question);
+    assert(gone.calls === 1, 'a backend that says it has no model is not asked again');
+    const dead = new FallbackBackend([{ ...flaky, fail: new Error('x') }], { now: () => clock });
+    assert(await dead.choose(question).then(() => false, e => /Nenhum modelo/.test(e.message)), 'all failed: an error, for the chain to handle');
+    assert((await both.load()).backend === 'server', 'load() reports which backend it settled on');
+});
+
+test('voice model: the chain asks the rules first, the model only what they did not understand, and a failing model is just "não entendi"', async () => {
+    const backend = fakeBackend(() => ['undo', 0.9]);
+    const commands = createCommandRegistry();
+    const rules = new RulesInterpreter();
+    const chain = new ChainInterpreter([rules, new ModelInterpreter({ backend, commands, extractor: rules })]);
+    assert((await chain.interpret('adiciona uma tabela')).command === 'add' && backend.calls.length === 0, 'the rules understood: the model is not even asked');
+    const guessed = await chain.interpret('hmm, volta um passo no que eu fiz');
+    assert(guessed.command === 'undo' && guessed.confidence === 0.9 && backend.calls.length === 1, JSON.stringify(guessed));
+    const errors = [];
+    const broken = new ChainInterpreter([rules, new ModelInterpreter({ backend: { id: 'x', async load() {}, async choose() { throw new Error('server down'); }, dispose() {} }, commands })], { onError: e => errors.push(e.message) });
+    assert(await broken.interpret('hmm, volta um passo no que eu fiz') === null && errors[0] === 'server down', 'the model failed: nothing broke');
+    assert((await broken.interpret('desfaz')).command === 'undo', 'and the rules still work');
+});
+
+test('voice model: ?model= picks the interpreter (rules by default; a model only on request; the browser model is imported lazily)', async () => {
+    const commands = createCommandRegistry();
+    const endpoint = { baseUrl: 'http://sync.test', session: async () => ({ token: 't' }) };
+    assert(await createInterpreter({ commands }) instanceof RulesInterpreter, 'default: rules only');
+    assert(await createInterpreter({ mode: 'off', commands, endpoint }) instanceof RulesInterpreter);
+    const errors = [];
+    assert(await createInterpreter({ mode: 'bogus', commands, onError: e => errors.push(e.message) }) instanceof RulesInterpreter && /bogus/.test(errors[0]), 'an unknown mode falls back to rules, loudly');
+    assert(await createInterpreter({ mode: 'remote', commands, endpoint: null, onError: e => errors.push(e.message) }) instanceof RulesInterpreter && errors.length === 2, 'remote without a sync server: rules + a warning');
+    assert(await createInterpreter({ mode: 'remote', commands, endpoint, workspaceId: 'w' }) instanceof ChainInterpreter, 'remote: rules then the server');
+    let made = 0;
+    const auto = await createInterpreter({ mode: 'auto', commands, endpoint, workspaceId: 'w', createLocal: async () => { made++; return fakeBackend(() => ['add', 0.9]); } });
+    assert(auto instanceof ChainInterpreter && made === 1, 'auto: server first, then the browser one');
+});
+
+test('voice model: Laya input is built as the model card says, within its token budgets', () => {
+    const encode = text => [...text].map(ch => ch.charCodeAt(0) % 90);
+    const special = { cls: 100, sep: 101, mask: 102 };
+    const config = { max_len: 60, head_max_len: 40 };
+    const { inputIds, markerPos } = buildChoiceInput({ encode, special, config, question: 'q', options: ['aa', 'bb', 'cc'], state: 'hello' });
+    assert(inputIds[0] === 100 && inputIds.at(-1) === 101, 'starts with [CLS], ends with [SEP]');
+    assert(markerPos.length === 3 && markerPos.every(at => inputIds[at] === 102), 'one [MASK] marker per option');
+    const crowded = buildChoiceInput({ encode, special, config: { max_len: 60, head_max_len: 40 }, question: 'q'.repeat(50), options: Array(10).fill('x'.repeat(30)), state: 's'.repeat(100) });
+    assert(crowded.inputIds.length <= 60 && crowded.markerPos.length === 10, `budgets hold: ${crowded.inputIds.length}`);
+    assert(temperatureFor({ temperature_by_options: { 'choice:11+': 0.1, 'choice:6-10': 1.2 } }, 17) === 0.5, 'clamped to [0.5, 5]');
+    assert(temperatureFor({ temperature_by_options: { 'choice:6-10': 1.2 } }, 8) === 1.2);
+    const p = softmax([2, 1, 0], 1);
+    assert(Math.abs(p.reduce((a, b) => a + b) - 1) < 1e-9 && p[0] > p[1] && p[1] > p[2], 'softmax');
+});
+
+//Needs the tokenizer file (tools/baixar_modelo_laya.py): the expected ids come from the Python `tokenizers` library
+test('voice model: the JS byte-level BPE gives the same ids as the reference tokenizer (skipped when models/laya-en-int4 is not installed)', async () => {
+    const response = await fetch('../models/laya-en-int4/tokenizer.json').catch(() => null);
+    if (!response?.ok) return;
+    const tokenizer = new ByteLevelBpe(await response.json());
+    const cases = await (await fetch('fixtures/laya_tokenizer_cases.json')).json();
+    const wrong = cases.filter(({ text, ids }) => JSON.stringify(tokenizer.encode(text)) !== JSON.stringify(ids)).map(c => JSON.stringify(c.text));
+    assert(!wrong.length, `${wrong.length}/${cases.length} differ: ${wrong.slice(0, 3).join(' ; ')}`);
+    assert(tokenizer.encode('[MASK]').length > 1 && !tokenizer.encode('[MASK]').includes(tokenizer.tokenId('[MASK]')), 'speaking "[MASK]" must not inject a control token');
+});
+
+//The real model, in a worker, in the browser: loads 262 MB (cached afterwards) and takes seconds on a CPU. Skipped without the weights.
+test('voice model: Laya runs in the browser and picks a sensible option (skipped when models/laya-en-int4 is not installed)', async () => {
+    const installed = await fetch('../models/laya-en-int4/model_int4.onnx', { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+    if (!installed) return;
+    const backend = new LayaBackend({ modelBase: new URL('../models/laya-en-int4/', location.href).pathname });
+    try {
+        await backend.load();
+        const { scores, ms } = await backend.choose({ question: 'Which of these is a fruit?', options: [{ id: 'car', text: 'a car' }, { id: 'apple', text: 'an apple' }, { id: 'house', text: 'a house' }], state: 'I am hungry and want to eat something sweet' });
+        assert(Math.abs(scores.reduce((sum, score) => sum + score.p, 0) - 1) < 1e-6 && ms > 0, JSON.stringify(scores));
+        assert(scores.length === 3 && scores.every(score => Number.isFinite(score.p)), JSON.stringify(scores));
+    } finally { backend.dispose(); }
+});
 
 test('voice: the rules interpreter picks the command and cuts the phrases out of the sentence', () => {
     const rules = new RulesInterpreter();

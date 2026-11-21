@@ -6,6 +6,9 @@
 #       AGORA_HOSTS=192.168.2.155 docker compose up -d --build
 # Transcription (Whisper in the browser) needs the model in ./models (outside git): tools/baixar_modelo_whisper.py
 # DEV AUTH is on: anyone who can reach the server gets a token. Use on a trusted network only.
+# Decision model on the SERVER (optional; devices where the in-browser one is too slow or does not run): see server/agora-model/README.md
+#       tools/baixar_modelo_laya.py && AGORA_MODEL_URL=http://model:8790 docker compose --profile model up -d --build
+#   and open the app with &model=remote (or &model=auto). GPU: add  -f docker-compose.gpu.yml
 # Production: see server/agora-sync/README.md.
 services:
   app:
@@ -30,8 +33,25 @@ services:
       AGORA_WEBHOOK_URL: ${AGORA_WEBHOOK_URL:-}
       AGORA_WEBHOOK_SECRET: ${AGORA_WEBHOOK_SECRET:-}
       RECORDING_IDLE_SECONDS: ${RECORDING_IDLE_SECONDS:-120}
+      # Where the decision model is (empty = none): the `model` service below, or ANY service that speaks its /choose contract
+      AGORA_MODEL_URL: ${AGORA_MODEL_URL:-}
+      AGORA_MODEL_TOKEN: ${AGORA_MODEL_TOKEN:-}
     volumes:
       - agora-data:/data
+    restart: unless-stopped
+  # Optional: only with `--profile model`. Laya on CPU by default; MODEL_BACKEND=openai_compat points it at another place
+  # (the inteligencia-aberta gateway, vLLM, an external API): AGORA_LLM_URL / AGORA_LLM_MODEL / AGORA_LLM_KEY.
+  model:
+    profiles: ["model"]
+    build: ./server/agora-model
+    environment:
+      MODEL_BACKEND: ${MODEL_BACKEND:-laya}
+      AGORA_MODEL_TOKEN: ${AGORA_MODEL_TOKEN:-}
+      AGORA_LLM_URL: ${AGORA_LLM_URL:-}
+      AGORA_LLM_MODEL: ${AGORA_LLM_MODEL:-}
+      AGORA_LLM_KEY: ${AGORA_LLM_KEY:-}
+    volumes:
+      - ./models/laya-en-int4:/models/laya-en-int4:ro
     restart: unless-stopped
 volumes:
   agora-data:

@@ -6,7 +6,8 @@ Falha (exit 1) se o código do núcleo violar a separação de camadas:
   1. Yjs, y-protocols, lib0 ou LiveKit só podem ser importados por collaboration/ (providers, document, presence)
      e por vendor/ (o próprio bundle). Componentes, UI, core e adaptadores NÃO os importam: trocar a biblioteca
      de CRDT tem de ser uma mudança em um lugar só.
-  2. Termos de domínio (Entity, Claim, Evidence, Provenance, Artifact, Organização...) não aparecem no código
+  2. O ONNX Runtime (vendor/ort) só é importado pelo backend do modelo de decisão (voice/interpreters/model/laya/).
+  3. Termos de domínio (Entity, Claim, Evidence, Provenance, Artifact, Organização...) não aparecem no código
      do núcleo. O Agora é genérico; o domínio é de quem o instala (o pacote ia-* vive no repositório do IA).
 
 Comentários e strings de teste não contam: o que conta é código (import e identificadores).
@@ -20,6 +21,10 @@ RAIZ = Path(os.environ.get("AGORA_RAIZ") or Path(__file__).resolve().parent.pare
 NUCLEO = ["core", "collaboration", "ui", "components", "adapters", "voice"]
 PODEM_IMPORTAR_CRDT = ("collaboration/", "vendor/")
 IMPORT_PROIBIDO = re.compile(r"""(?:from|import)\s*\(?\s*['"][^'"]*(?:\byjs\b|y-protocols|lib0|livekit)[^'"]*['"]""", re.I)
+#O runtime ONNX (vendor/ort) é detalhe do backend do modelo de decisão: o resto de voice/ fala só com o contrato ChoiceBackend,
+#e é isso que permite trocar o modelo sem mexer no interpretador, no serviço de voz nem nos comandos.
+PODEM_IMPORTAR_ORT = ("voice/interpreters/model/laya/", "vendor/")
+IMPORT_ORT = re.compile(r"""(?:from|import)\s*\(?\s*['"][^'"]*(?:vendor/ort|onnxruntime)[^'"]*['"]""", re.I)
 TERMOS_DOMINIO = re.compile(r"\b(Entity|Entities|Claim|Evidence|Provenance|Artifact|Organization|Organizacao|Empresa|Pessoa)\b")
 
 
@@ -36,6 +41,8 @@ def main() -> int:
             codigo = codigo_sem_comentarios(arquivo.read_text(encoding="utf-8"))
             if not rel.startswith(PODEM_IMPORTAR_CRDT) and IMPORT_PROIBIDO.search(codigo):
                 problemas.append(f"{rel}: importa Yjs/LiveKit fora de collaboration/ (use o StateStore/provider)")
+            if not rel.startswith(PODEM_IMPORTAR_ORT) and IMPORT_ORT.search(codigo):
+                problemas.append(f"{rel}: importa o ONNX Runtime fora de voice/interpreters/model/laya/ (use o ChoiceBackend)")
             achados = sorted(set(TERMOS_DOMINIO.findall(re.sub(r"(['\"`]).*?\1", "", codigo))))
             if achados:
                 problemas.append(f"{rel}: termo(s) de domínio no núcleo: {', '.join(achados)}")

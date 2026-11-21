@@ -1,5 +1,5 @@
 {
- "version": "2f7e41ee2214d61e",
+ "version": "7e986a3adff884d3",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -111,6 +111,8 @@
   "ui/workspace/drop_targets.js",
   "ui/workspace/float_frame.js",
   "ui/workspace/popout.js",
+  "vendor/ort/ort-wasm-simd-threaded.mjs",
+  "vendor/ort/ort.wasm.min.mjs",
   "vendor/qr/uqr.js",
   "vendor/ultima/component_base.js",
   "vendor/ultima/controller_base.js",
@@ -119,7 +121,17 @@
   "vendor/whisper/ort-wasm-simd-threaded.mjs",
   "vendor/whisper/transformers.min.js",
   "vendor/yjs/yjs.js",
+  "voice/interpreters/chain.js",
+  "voice/interpreters/model/choice_backend.js",
+  "voice/interpreters/model/fallback_backend.js",
+  "voice/interpreters/model/laya/bpe_tokenizer.js",
+  "voice/interpreters/model/laya/laya_backend.js",
+  "voice/interpreters/model/laya/laya_input.js",
+  "voice/interpreters/model/laya/laya_worker.js",
+  "voice/interpreters/model/model_interpreter.js",
+  "voice/interpreters/model/remote/remote_backend.js",
   "voice/interpreters/rules.js",
+  "voice/interpreters/select.js",
   "voice/service.js"
  ]
 }

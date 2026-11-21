@@ -28,6 +28,8 @@ Com `AGORA_DEV_AUTH=1` o servidor emite tokens para qualquer um (`POST /dev/toke
 | `AGORA_WEBHOOK_URL` / `AGORA_WEBHOOK_SECRET` | (opcional) para onde vão os eventos da chamada e das gravações (`call.*`, `recording.*`, `transcript.finalized`): `POST` assinado com HMAC-SHA256, reenviado até o host responder |
 | `RECORDING_IDLE_SECONDS` | segundos sem partes até o servidor encerrar uma gravação que ninguém terminou (padrão 120) |
 | `MAX_RECORDING_PART_BYTES` | tamanho máximo de uma parte da gravação (padrão 8 MB) |
+| `AGORA_MODEL_URL` / `AGORA_MODEL_TOKEN` | (opcional) onde está o modelo de decisão de comandos (D-44): o `server/agora-model` ou qualquer serviço que fale o contrato `POST /choose`. Sem URL, `POST /v1/workspaces/:id/decide` responde 503 e `GET` diz `{available:false}`. O texto da fala é repassado e **esquecido** (nem em log) |
+| `AGORA_MODEL_TIMEOUT_MS` / `AGORA_MODEL_PER_MINUTE` | tempo máximo de espera pelo modelo (padrão 10 000) / pedidos por pessoa por minuto (padrão 30) |
 
 O host (Django) emite tokens curtos com as claims `sub`, `name`, `workspace`, `role`, `exp`. Sem
 `AGORA_DEV_AUTH`, `/dev/*` responde 404.

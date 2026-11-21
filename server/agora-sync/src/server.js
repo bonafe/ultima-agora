@@ -16,6 +16,7 @@ import { EventBus, webhookSink, logSink } from './events.js';
 import { DiskFileStore } from './files.js';
 import { RecordSet } from './records.js';
 import { createApi } from './api.js';
+import { createDecide } from './decide.js';
 
 const MSG_SYNC = 0, MSG_AWARENESS = 1, MSG_CONTROL = 3, MSG_CHAT = 4, MSG_SIGNAL = 5, MSG_TRANSCRIPT = 6, MSG_CALL = 7;
 const CHAT_WRITERS = new Set(['owner', 'editor', 'participant']);        // viewers read the chat, they do not write (D-30)
@@ -164,7 +165,7 @@ class Connection {
 }
 
 export function createSyncServer({ secret, adminToken = null, dataDir = null, chatRetentionDays = 0, transcriptRetentionDays = 0, iceServers = null, devAuth = false, maxMessageBytes = 2 * 1024 * 1024, log = () => {},
-    events = null, webhookUrl = null, webhookSecret = null, files = null, maxPartBytes, recordingIdleMs = 120_000, sweepEveryMs = 30_000 } = {}) {
+    events = null, webhookUrl = null, webhookSecret = null, files = null, modelUrl = null, modelToken = null, modelTimeoutMs = 10_000, modelPerMinute = 30, maxPartBytes, recordingIdleMs = 120_000, sweepEveryMs = 30_000 } = {}) {
     const key = checkSecret(secret, devAuth);
     if (dataDir) mkdirSync(dataDir, { recursive: true });
     //What the host system hears about (the EventSink contract): an outbox on disk, a signed webhook when one is configured
@@ -183,7 +184,7 @@ export function createSyncServer({ secret, adminToken = null, dataDir = null, ch
         if (dataDir) for (const name of readdirSync(dataDir)) if (name.endsWith('.recordings.jsonl')) ids.add(name.slice(0, -'.recordings.jsonl'.length));
         return [...ids].filter(id => WORKSPACE_ID.test(id));
     };
-    const api = files ? createApi({ key, files, events, roomFor, listWorkspaces, log, maxPartBytes, idleMs: recordingIdleMs }) : null;
+    const api = files ? createApi({ key, files, events, roomFor, listWorkspaces, decide: createDecide({ url: modelUrl, token: modelToken, timeoutMs: modelTimeoutMs, perMinute: modelPerMinute, log }), log, maxPartBytes, idleMs: recordingIdleMs }) : null;
     const sweeper = api ? setInterval(() => { api.sweep().catch(error => log(`sweep failed: ${error.message}`)); }, sweepEveryMs) : null;
     sweeper?.unref();
 

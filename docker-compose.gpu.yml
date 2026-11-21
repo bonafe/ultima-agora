@@ -1,0 +1,17 @@
+# GPU NVIDIA para o modelo de decisão (precisa do NVIDIA Container Toolkit no host). Uso:
+#   AGORA_MODEL_URL=http://model:8790 docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile model up -d --build
+services:
+  model:
+    build:
+      context: ./server/agora-model
+      args:
+        REQUIREMENTS: requirements-gpu.txt
+    environment:
+      ONNX_PROVIDERS: CUDAExecutionProvider,CPUExecutionProvider
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

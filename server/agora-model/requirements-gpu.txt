@@ -1,0 +1,4 @@
+# Igual ao requirements.txt, com o onnxruntime da GPU NVIDIA (CUDA). Exige o NVIDIA Container Toolkit no host.
+onnxruntime-gpu==1.32.0
+tokenizers==0.23.3
+numpy>=1.26,<3

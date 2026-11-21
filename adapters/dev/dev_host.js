@@ -52,6 +52,10 @@ export class DevHost {
 
     get syncEnabled() { return this.#sync !== null; }
 
+    //Where the server's decision model (POST /v1/workspaces/:id/decide on the sync server) can be asked, with the same short token the sync uses.
+    //null without a sync server. Optional on a host: the shell asks with `?.`.
+    decisionEndpoint(workspaceId) { return this.#sync ? { baseUrl: this.#sync.http, session: id => this.#session(id ?? workspaceId) } : null; }
+
     //What the shell's settings dialog shows (see ui/settings/agora-settings.js)
     get settings() {
         return {

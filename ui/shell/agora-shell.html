@@ -14,6 +14,7 @@
     <span id="role" class="secondary" hidden></span>
     <span id="status" class="secondary" role="status" aria-live="polite"></span>
     <button id="chat-toggle" type="button" aria-pressed="false" aria-label="Chat" title="Chat" hidden>💬<span id="chat-badge" hidden></span></button>
+    <button id="invite" class="secondary" type="button" aria-label="Convidar" title="Convidar: QR code e link para entrar neste workspace" aria-haspopup="dialog" hidden>📲</button>
     <button id="voice-toggle" type="button" aria-pressed="false" aria-label="Comandos por voz" title="Comandos por voz e linha de comando">🎙</button>
     <button id="call-toggle" type="button" aria-pressed="false" aria-label="Chamada" title="Chamada de áudio e vídeo" hidden>📹<span id="call-badge" hidden></span></button>
     <button id="menu" type="button" aria-expanded="false" aria-controls="header-more" aria-label="Mais opções" title="Mais opções">⋯</button>
@@ -24,6 +25,7 @@
 <div id="banner" role="alert" hidden></div>
 <agora-voice hidden></agora-voice>
 <agora-settings></agora-settings>
+<agora-invite></agora-invite>
 <div class="body">
     <aside id="palette-pane" aria-label="Componentes"><agora-palette></agora-palette></aside>
     <main><agora-workspace></agora-workspace></main>

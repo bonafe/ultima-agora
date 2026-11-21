@@ -1,0 +1,17 @@
+<link rel="stylesheet" href="agora-invite.css">
+<dialog id="dialog" aria-labelledby="title">
+    <header>
+        <h2 id="title">Convidar para este workspace</h2>
+        <button id="close" type="button" aria-label="Fechar">✕</button>
+    </header>
+    <div class="content">
+        <div id="qr" class="qr" role="img" aria-label="QR code do link do workspace"></div>
+        <p class="hint">Aponte a câmera de outro aparelho para entrar neste workspace (e na chamada dele).</p>
+        <label class="field"><span>Link</span><input id="link" type="text" spellcheck="false" autocomplete="off"></label>
+        <p id="warn" class="warn" hidden></p>
+        <div class="actions">
+            <span id="copied" class="ok" role="status" aria-live="polite"></span>
+            <button id="copy" type="button" class="primary">Copiar link</button>
+        </div>
+    </div>
+</dialog>

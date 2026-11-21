@@ -44,6 +44,8 @@ import { boxSize } from '../core/components/box.js';
 import '../ui/inspector/agora-inspector.js';
 import '../ui/palette/agora-palette.js';
 import '../ui/voice/agora-voice.js';
+import '../ui/invite/agora-invite.js';
+import { linkProblem } from '../ui/invite/agora-invite.js';
 import '../ui/settings/agora-settings.js';
 import '../ui/shell/agora-shell.js';
 import { THEME_KEY } from '../ui/settings/agora-settings.js';
@@ -1846,6 +1848,65 @@ test('voice bar: the switch turns the transcription on for commands only, and of
     assert(!service.enabled && !transcriber.enabled, 'off: the voice stops listening, and the transcription it started stops with it');
     bar.remove();
     transcriber.destroy();
+});
+
+// --- invite: QR code and link to join the workspace ---
+
+test('invite: the dialog draws a QR code of the link, follows edits, and warns when the address only works on this computer', async () => {
+    const invite = document.createElement('agora-invite');
+    document.body.append(invite);
+    assert(await settleOrTimeout(invite.whenLoaded()));
+    const q = selector => invite.rootNode.querySelector(selector);
+    invite.open({ link: 'http://localhost:8080/app.html?sync=http://localhost:8080/sync#/workspace/abc' });
+    assert(invite.isOpen && q('#qr svg') && q('#link').value.endsWith('#/workspace/abc'));
+    assert(!q('#warn').hidden && /só funciona neste computador/.test(q('#warn').textContent), 'a localhost link is flagged');
+    const first = q('#qr').innerHTML;
+    q('#link').value = 'https://192.168.2.155:8443/app.html?sync=https://192.168.2.155:8443/sync#/workspace/abc';
+    q('#link').dispatchEvent(new Event('input'));
+    assert(q('#warn').hidden && q('#qr').innerHTML !== first, 'a network address clears the warning and redraws the QR');
+    q('#link').value = '';
+    q('#link').dispatchEvent(new Event('input'));
+    assert(!q('#warn').hidden && q('#qr').innerHTML === '', 'no link: no QR');
+    invite.close();
+    assert(!invite.isOpen);
+    invite.remove();
+});
+
+test('invite: linkProblem accepts a network address and rejects localhost and nonsense', () => {
+    assert(linkProblem('https://192.168.2.155:8443/app.html#/workspace/1') === null);
+    assert(linkProblem('https://agora.exemplo.com/app.html#/workspace/1') === null);
+    for (const bad of ['http://localhost:8080/', 'http://127.0.0.1/', 'http://[::1]:8080/', 'http://meu.localhost/', 'não é link', '']) assert(linkProblem(bad), `should flag "${bad}"`);
+});
+
+test('invite: the shell offers it only when there is a sync server to join, and the link carries the workspace but not a one-off template', async () => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const savedUrl = location.href;
+    const mount = async host => {
+        const shell = document.createElement('agora-shell');
+        shell.style.cssText = 'display:block;width:1000px;height:600px';
+        document.body.append(shell);
+        assert(await settleOrTimeout(shell.whenLoaded()));
+        await shell.init({ host, registry });
+        await wait(200);
+        return shell;
+    };
+    const local = await mount(new DevHost({ dbName: `agora-test-${uuid()}` }));
+    assert(local.shadowRoot.querySelector('#invite').hidden === true, 'a local-only host has nobody to invite');
+    local.remove();
+
+    const host = new DevHost({ dbName: `agora-test-${uuid()}` });
+    Object.defineProperty(host, 'syncEnabled', { get: () => true });                       // the shell only asks whether there is a server
+    history.replaceState(null, '', `${location.pathname}?sync=http://10.0.0.5:8080/sync&template=boas-vindas${location.hash}`);
+    const shell = await mount(host);
+    const button = shell.shadowRoot.querySelector('#invite');
+    assert(!button.hidden, 'with a sync server the button is there');
+    button.click();
+    const invite = shell.shadowRoot.querySelector('agora-invite');
+    assert(invite.isOpen && invite.link.includes('sync=http') && !invite.link.includes('template=') && /#\/workspace\/.+/.test(invite.link), invite.link);
+    invite.close();
+    shell.remove();
+    history.replaceState(null, '', savedUrl);
 });
 
 // --- port types ---

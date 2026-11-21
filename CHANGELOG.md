@@ -2,6 +2,11 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (convidar por QR code)
+
+### Added
+- **Convidar** (botão 📲 no cabeçalho, só quando há servidor de sincronização): abre um diálogo com o **QR code** do link que entra no workspace (e na chamada dele) e o link em texto, com "Copiar link". O link leva o `?sync=` e o id do workspace, nunca um `?template=` de uso único. O campo do link é editável e o QR acompanha: se o app foi aberto como `localhost` o diálogo avisa que aquele endereço só funciona neste computador e pede o IP ou nome da rede. O gerador de QR é o [uqr](https://github.com/unjs/uqr) 0.1.3 (MIT) copiado em `vendor/qr/` (D-06); a leitura do QR gerado foi conferida com um decodificador independente (OpenCV).
+
 ## Unreleased (comandos de voz)
 
 ### Added

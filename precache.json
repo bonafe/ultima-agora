@@ -1,5 +1,5 @@
 {
- "version": "879a2acac7a0398f",
+ "version": "2f7e41ee2214d61e",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -88,6 +88,9 @@
   "ui/inspector/agora-inspector.css",
   "ui/inspector/agora-inspector.html",
   "ui/inspector/agora-inspector.js",
+  "ui/invite/agora-invite.css",
+  "ui/invite/agora-invite.html",
+  "ui/invite/agora-invite.js",
   "ui/palette/agora-palette.css",
   "ui/palette/agora-palette.html",
   "ui/palette/agora-palette.js",
@@ -108,6 +111,7 @@
   "ui/workspace/drop_targets.js",
   "ui/workspace/float_frame.js",
   "ui/workspace/popout.js",
+  "vendor/qr/uqr.js",
   "vendor/ultima/component_base.js",
   "vendor/ultima/controller_base.js",
   "vendor/ultima/mixins.js",

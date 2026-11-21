@@ -10,6 +10,7 @@ import '../workspace/agora-workspace.js';
 import '../inspector/agora-inspector.js';
 import '../call/agora-call.js';
 import '../voice/agora-voice.js';
+import '../invite/agora-invite.js';
 import { VoiceCommandService } from '../../voice/service.js';
 import { loadTheme } from '../settings/agora-settings.js';
 
@@ -108,6 +109,7 @@ export class AgoraShell extends ReactiveComponent {
             event.currentTarget.setAttribute('aria-pressed', String(!hidden));
             if (!hidden) this.#$('agora-voice').rootNode?.querySelector('#text')?.focus();
         });
+        on('#invite', 'click', () => { if (this.#meta) this.#$('agora-invite').open({ link: this.#inviteLink(this.#meta.id) }); });
         on('#settings', 'click', () => this.#$('agora-settings').open({ host: this.#host }));
         this.rootNode.addEventListener('theme-change', event => this.#applyTheme(event.detail.theme));
         //After "limpar este dispositivo" nothing local remains, so start over (online: back through the host's own entry)
@@ -177,6 +179,15 @@ export class AgoraShell extends ReactiveComponent {
         await this.#open(id);
     }
 
+    //The address that opens this workspace on another device: the sync server it uses (?sync=) and the workspace id. Nothing else
+    //(a one-off ?template= must not be passed along).
+    #inviteLink(id) {
+        const url = new URL(location.href);
+        url.searchParams.delete('template');
+        url.hash = hashFor(id);
+        return url.toString();
+    }
+
     #createWelcome() { return this.#host.create(WELCOME.title, { seed: WELCOME_TEMPLATE_NAME }); }
 
     async #open(id) {
@@ -229,6 +240,7 @@ export class AgoraShell extends ReactiveComponent {
         const showStatus = status => { this.#$('#status').textContent = STATUS_TEXT[status] ?? status; };
         const showPeers = () => this.#paintPeers(doc);
 
+        this.#$('#invite').hidden = !this.#host.syncEnabled;       // without a sync server nobody else can open it: no link to give
         showTitle(); applyRole(); showStatus(doc.status); showPeers();
         await this.#mountChat(workspace);
         await this.#mountCall(workspace);

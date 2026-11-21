@@ -1,0 +1,19 @@
+:host { color: var(--agora-text, inherit); font: inherit; }
+dialog { width: min(24rem, 94vw); max-height: 92vh; padding: 0; border: 1px solid var(--agora-border, #ccc); border-radius: .6rem; background: var(--agora-surface, #fff); color: inherit; box-shadow: 0 12px 40px rgb(0 0 0 / .35); }
+dialog::backdrop { background: rgb(0 0 0 / .45); }
+header { display: flex; align-items: center; justify-content: space-between; padding: .7rem 1rem; border-bottom: 1px solid var(--agora-border, #ccc); }
+h2 { margin: 0; font-size: 1.05rem; }
+.content { padding: .75rem 1rem 1rem; overflow: auto; max-height: calc(92vh - 3.2rem); }
+.qr { width: min(16rem, 70vw); aspect-ratio: 1; margin: .25rem auto .5rem; padding: .6rem; box-sizing: border-box; background: #fff; border-radius: .4rem; }   /* always light: scanners need the contrast */
+.qr svg { display: block; width: 100%; height: 100%; }
+.hint { margin: .3rem 0 .6rem; font-size: .85rem; opacity: .75; text-align: center; }
+.field { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; }
+.field span { opacity: .65; text-transform: uppercase; letter-spacing: .06em; font-size: .7rem; }
+input { font: inherit; font-size: .85rem; width: 100%; box-sizing: border-box; padding: .35rem .5rem; border: 1px solid var(--agora-border, #ccc); border-radius: .3rem; background: var(--agora-bg, #eef0f4); color: inherit; }
+.warn { margin: .5rem 0 0; padding: .4rem .6rem; font-size: .82rem; border: 1px solid #e0a800; border-radius: .3rem; background: color-mix(in srgb, #e0a800 14%, transparent); }
+.warn[hidden] { display: none; }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; margin-top: .75rem; }
+.ok { font-size: .85rem; opacity: .8; }
+button { font: inherit; padding: .3rem .7rem; border: 1px solid var(--agora-border, #ccc); border-radius: .3rem; background: var(--agora-surface, #fff); color: inherit; cursor: pointer; min-height: 2rem; }
+button.primary { border-color: var(--agora-accent, #2a6df4); }
+:focus-visible { outline: 2px solid var(--agora-accent, #2a6df4); outline-offset: 2px; }

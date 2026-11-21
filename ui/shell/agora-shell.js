@@ -9,6 +9,8 @@ import '../palette/agora-palette.js';
 import '../workspace/agora-workspace.js';
 import '../inspector/agora-inspector.js';
 import '../call/agora-call.js';
+import '../voice/agora-voice.js';
+import { VoiceCommandService } from '../../voice/service.js';
 import { loadTheme } from '../settings/agora-settings.js';
 
 const STATUS_TEXT = { synced: 'Salvo', saving: 'Salvando…', error: 'Erro', offline: 'Offline (salvo aqui)', connecting: 'Conectando…' };
@@ -101,6 +103,11 @@ export class AgoraShell extends ReactiveComponent {
         });
         on('#chat-toggle', 'click', () => this.#toggleChat());
         on('#call-toggle', 'click', () => this.#toggleCall());
+        on('#voice-toggle', 'click', event => {
+            const hidden = this.#$('agora-voice').toggleAttribute('hidden');
+            event.currentTarget.setAttribute('aria-pressed', String(!hidden));
+            if (!hidden) this.#$('agora-voice').rootNode?.querySelector('#text')?.focus();
+        });
         on('#settings', 'click', () => this.#$('agora-settings').open({ host: this.#host }));
         this.rootNode.addEventListener('theme-change', event => this.#applyTheme(event.detail.theme));
         //After "limpar este dispositivo" nothing local remains, so start over (online: back through the host's own entry)
@@ -225,6 +232,7 @@ export class AgoraShell extends ReactiveComponent {
         showTitle(); applyRole(); showStatus(doc.status); showPeers();
         await this.#mountChat(workspace);
         await this.#mountCall(workspace);
+        await this.#mountVoice(workspace);
         this.#cleanup.push(
             doc.onHistory(() => this.#refreshHistory()),
             doc.onChange('meta.title', showTitle),
@@ -245,6 +253,16 @@ export class AgoraShell extends ReactiveComponent {
             doc.presence.onPeers(showPeers),
         );
         await this.#refreshList();
+    }
+
+    // ---- voice commands: the person's own switch; typed commands work without a microphone (R-VOICE-2) ----
+
+    async #mountVoice(workspace) {
+        const bar = this.#$('agora-voice');
+        await bar.whenLoaded();
+        const service = new VoiceCommandService({ workspace });
+        bar.bind({ workspace, service });
+        this.#cleanup.push(() => bar.unbind());
     }
 
     // ---- chat drawer: the same ultima-chat component, docked ----

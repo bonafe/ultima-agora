@@ -2,6 +2,17 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (comandos de voz)
+
+### Added
+- **Comandos por voz, F1** (plano em `~/.claude/plans`): a fala da própria pessoa pode virar comando no workspace. `VoiceCommandService` (`voice/`) escuta `Transcriber.onUtterance`, exige a palavra de ativação ("Ágora, …"; comandos digitados não exigem), interpreta com `RulesInterpreter` (gramática pt-BR, sem modelo; o contrato `interpret(text, ctx)` aceita depois um modelo de decisão como Laya/JEV) e executa pelo `CommandRegistry` (`core/commands/`). Os comandos usam só a API do `Workspace`: respeitam o papel (um `viewer` é recusado), cada um é um passo de desfazer e as janelas criadas levam `createdVia: 'voice'`. Remover e desconectar perguntam antes e só executam com "sim". Limite de 20 comandos por minuto; frase de baixa confiança é perguntada de volta, não executada.
+- Comandos: adicionar (com lado e "ao lado de"), remover, renomear, duplicar, mover, focar, conectar, desconectar, desfazer, refazer, executar ação de uma janela ("mostra como grafo"), anotar, escrever no chat, parar de transcrever, "o que tem na tela?" e "quais comandos?".
+- `Workspace`: `describe()` (resumo pequeno, sem conteúdo), `duplicateInstance`, `undo/redo/canUndo/canRedo`, foco da pessoa (`setFocus`, estado de visão fora do documento).
+- `Transcriber.onUtterance(fn)` e `setSendToLog(false)` ("só comandos": a frase é usada localmente e não vai para a transcrição da chamada).
+- A gramática do `RulesInterpreter` entende interjeições ("ops, desfaz", "pode fechar"), sinônimos e formas livres ("quero ver como grafo", "me traz as notas", "liga a tabela ao grafo", "desfaz a conexão da busca"). Medido em 111 frases que ela não tinha visto: 93,7 % entendidas, 0 comandos trocados (`docs/spike-laya.md`). "Desconectar" agora vale nos dois sentidos e, sem o destino, desfaz todas as conexões da janela.
+- **Barra de comandos no shell** (botão 🎙 no cabeçalho, `ui/voice/agora-voice`): interruptor "Ouvir meus comandos" (liga a transcrição só para comandos, sem enviar a fala à transcrição da chamada; desliga junto), linha de comando digitada (mesmo caminho da voz: funciona sem microfone e por teclado), o que foi ouvido e o resultado, **Desfazer** na própria mensagem, **Sim/Não** nos comandos destrutivos, lista "Comandos" e resposta em voz alta opcional. Sem chamada/transcrição (ou sem `?sync=`) só a linha digitada fica ativa e a barra diz isso.
+- Falta (próximas fases): comandos de chamada (silenciar, câmera), as decisões D-43+ nos docs e testar a voz de ponta a ponta com microfone real.
+
 ## Unreleased (phone UX)
 
 ### Added

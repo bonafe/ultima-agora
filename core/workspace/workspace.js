@@ -132,6 +132,53 @@ export class Workspace {
         this.#doc.transact(`rename ${id}`, () => this.#doc.set(['instances', id, 'label'], label));
     }
 
+    //Copies an instance (type, config, label and shared text) next to the original, as one undoable operation. Domain data is
+    //referenced by the config, never copied (R-DOC-3).
+    duplicateInstance(id, { createdVia = 'palette' } = {}) {
+        this.#assertWritable();
+        const record = this.instance(id);
+        if (!record) throw new Error(`Unknown instance "${id}"`);
+        let created = null;
+        this.#doc.transact(`duplicate ${id}`, () => {
+            const panelId = this.#layout.findPanelOf(id);
+            created = this.addInstance(record.type, { config: structuredClone(record.config ?? {}), label: `${record.label} (cópia)`, target: panelId ? { panelId } : {}, createdVia });
+            if (this.#registry.getManifest(record.type)?.capabilities?.includes('shared-content')) this.#doc.text(['content', created, 'text']).setText(this.#doc.text(['content', id, 'text']).getText());
+        });
+        return created;
+    }
+
+    // ---- history: the same undo/redo the shell's keyboard shortcut uses ----
+
+    get canUndo() { return this.#doc.canUndo; }
+    get canRedo() { return this.#doc.canRedo; }
+    undo() { return this.#doc.undo(); }
+    redo() { return this.#doc.redo(); }
+
+    // ---- focus: where the person is looking. View state, never in the document (nobody else sees it) ----
+
+    #focused = null;
+    #focusListeners = new Set();
+    get focusedId() { return this.#focused && this.instance(this.#focused) ? this.#focused : null; }
+    setFocus(id) {
+        if (id !== null && !this.instance(id)) throw new Error(`Unknown instance "${id}"`);
+        if (id === this.#focused) return;
+        this.#focused = id;
+        for (const fn of [...this.#focusListeners]) { try { fn(id); } catch (e) { console.error('[workspace] focus listener error:', e); } }
+    }
+    onFocus(fn) { this.#focusListeners.add(fn); return () => this.#focusListeners.delete(fn); }
+
+    //A small, size-bounded summary of what is on screen: what an interpreter (or an agent, docs 08.4 `workspace.describe`) needs
+    //to name things. Ids, types, labels and where they are; never content (R-CTX-1).
+    describe() {
+        const instances = this.instances().map(({ id, type, label }) => ({
+            id, type, label, panel: this.#layout.findPanelOf(id), actions: Object.keys(this.#registry.getManifest(type)?.actions ?? {}),
+        }));
+        return {
+            title: this.title, role: this.role, focus: this.focusedId, instances,
+            connections: this.#bus.list().map(c => ({ id: c.id, from: c.from, to: c.to })),
+        };
+    }
+
     // ---- actions and suggestions (docs 04, 4.6 and 4.7) ----
 
     //Components that can display a value of `type` on one of their inputs, best first: the ones the action

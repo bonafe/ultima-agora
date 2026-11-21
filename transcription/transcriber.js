@@ -18,6 +18,8 @@ export class Transcriber {
     #session = null;
     #track = null;
     #listeners = new Set();
+    #utterances = new Set();
+    #sendToLog = true;
     #stopRoom;
 
     //engine: WhisperProvider (or anything with supported/load/start).  client: TranscriptClient.  room: ConferenceRoom.
@@ -39,6 +41,13 @@ export class Transcriber {
     get canWrite() { return this.#client.canWrite; }
 
     onChange(fn) { this.#listeners.add(fn); return () => this.#listeners.delete(fn); }
+
+    //What the person just said, once per finished utterance and only their own speech: { text, startedAt, durationMs, language }.
+    //This is how voice commands listen (they never see anyone else's words).
+    onUtterance(fn) { this.#utterances.add(fn); return () => this.#utterances.delete(fn); }
+    //false = the text is used locally (commands) and is NOT sent to the call transcript (R-TRANS-4)
+    get sendToLog() { return this.#sendToLog; }
+    setSendToLog(value) { this.#sendToLog = value !== false; }
     #set(patch) {
         const before = `${this.#state}|${this.#progress}|${this.#error}|${this.#enabled}`;
         if ('state' in patch) this.#state = patch.state;
@@ -102,7 +111,11 @@ export class Transcriber {
         try {
             this.#session = this.#engine.start(track, {
                 language: this.#language,
-                onSegment: ({ text, startedAt, durationMs }) => this.#client.send(text, { startedAt, language: this.#language, durationMs }),
+                onSegment: ({ text, startedAt, durationMs }) => {
+                    const utterance = { text, startedAt, durationMs, language: this.#language };
+                    for (const fn of [...this.#utterances]) { try { fn(utterance); } catch (e) { console.error('[transcriber] utterance listener error:', e); } }
+                    if (this.#sendToLog) this.#client.send(text, { startedAt, language: this.#language, durationMs });
+                },
                 onState: state => { if (this.#enabled && this.#session) this.#set({ state: state === 'behind' ? 'transcribing' : state === 'error' ? 'error' : state, error: state === 'error' ? 'Não foi possível ouvir o microfone para transcrever.' : this.#error }); },
             });
         } catch (error) { this.#set({ state: 'error', error: error.message }); }
@@ -114,5 +127,5 @@ export class Transcriber {
         this.#track = null;
     }
 
-    destroy() { this.#stopRoom(); this.#stopSession(); this.#listeners.clear(); }
+    destroy() { this.#stopRoom(); this.#stopSession(); this.#listeners.clear(); this.#utterances.clear(); }
 }

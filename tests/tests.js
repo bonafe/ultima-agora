@@ -21,6 +21,10 @@ import { ConferenceError } from '../conference/conference_provider.js';
 import { Resampler, Segmenter, cleanTranscript } from '../transcription/whisper/speech.js';
 import { WhisperProvider } from '../transcription/whisper/whisper_provider.js';
 import { Transcriber } from '../transcription/transcriber.js';
+import { createCommandRegistry } from '../core/commands/catalog.js';
+import { resolveInstance, resolveType } from '../core/commands/resolve.js';
+import { RulesInterpreter } from '../voice/interpreters/rules.js';
+import { VoiceCommandService } from '../voice/service.js';
 import { TranscriptClient } from '../collaboration/providers/transcript_client.js';
 import { uuid } from '../core/ids.js';
 import { createFloatFrame } from '../ui/workspace/float_frame.js';
@@ -39,6 +43,7 @@ import '../ui/workspace/agora-workspace.js';
 import { boxSize } from '../core/components/box.js';
 import '../ui/inspector/agora-inspector.js';
 import '../ui/palette/agora-palette.js';
+import '../ui/voice/agora-voice.js';
 import '../ui/settings/agora-settings.js';
 import '../ui/shell/agora-shell.js';
 import { THEME_KEY } from '../ui/settings/agora-settings.js';
@@ -1774,6 +1779,75 @@ test('palette: lists registered components, filters by search and announces addi
     assert(items().every(b => b.disabled));
 });
 
+const voiceBar = async ({ role, transcriber = null } = {}) => {
+    const workspace = await voiceWorkspace({ role });
+    if (transcriber) workspace.doc.transcriber = transcriber;
+    const service = new VoiceCommandService({ workspace });
+    const bar = document.createElement('agora-voice');
+    document.body.append(bar);
+    assert(await settleOrTimeout(bar.whenLoaded()));
+    bar.bind({ workspace, service });
+    const q = selector => bar.rootNode.querySelector(selector);
+    const type = async text => { q('#text').value = text; q('#line').dispatchEvent(new Event('submit', { cancelable: true })); await wait(30); };
+    return { workspace, service, bar, q, type };
+};
+
+test('voice bar: a typed command runs, shows what happened and offers to undo it', async () => {
+    const { workspace, q, type, bar } = await voiceBar();
+    assert(q('#feedback').hidden, 'nothing to show before the first command');
+    await type('adiciona uma tabela');
+    assert(workspace.instances().length === 1 && q('#message').textContent.startsWith('Adicionei') && q('#feedback').classList.contains('done'));
+    const undo = [...q('#actions').querySelectorAll('button')].find(b => b.textContent === 'Desfazer');
+    assert(undo, 'a command that changed the composition can be undone from the message');
+    undo.click();
+    assert(workspace.instances().length === 0 && q('#message').textContent === 'Desfeito.');
+    await type('abracadabra');
+    assert(q('#feedback').classList.contains('unknown') && /Não entendi/.test(q('#message').textContent) && q('#actions').children.length === 0);
+    bar.remove();
+});
+
+test('voice bar: a destructive command asks, and Sim / Não answer it', async () => {
+    const { workspace, q, type, bar } = await voiceBar();
+    workspace.addInstance('ultima-notes');
+    await type('remove as notas');
+    const buttons = [...q('#actions').querySelectorAll('button')];
+    assert(/Remover/.test(q('#message').textContent) && buttons.map(b => b.textContent).join() === 'Sim,Não' && workspace.instances().length === 1);
+    buttons[1].click(); await wait(30);
+    assert(workspace.instances().length === 1 && q('#message').textContent === 'Cancelado.');
+    await type('remove as notas');
+    [...q('#actions').querySelectorAll('button')][0].click(); await wait(30);
+    assert(workspace.instances().length === 0, 'Sim runs it');
+    bar.remove();
+});
+
+test('voice bar: "quais comandos" lists them, a viewer is refused, and the switch is off without a transcriber', async () => {
+    const { q, type, bar } = await voiceBar({ role: 'viewer' });
+    await type('adiciona uma tabela');
+    assert(/não permite/.test(q('#message').textContent) && q('#feedback').classList.contains('failed'));
+    await type('quais comandos?');
+    assert(q('#commands').children.length > 8 && !q('#commands').hidden);
+    assert(q('#listen').disabled && /digite/i.test(q('#state').textContent), 'no transcriber: the voice switch is off and says to type');
+    bar.remove();
+});
+
+test('voice bar: the switch turns the transcription on for commands only, and off again', async () => {
+    const sent = [];
+    let onSegment = null;
+    const room = { on: () => () => {}, joined: true, localAudioTrack: {}, setTranscribing() {} };
+    const transcriber = new Transcriber({ engine: { supported: true, load: async () => {}, start: (track, options) => { onSegment = options.onSegment; return { stop() {} }; } }, client: { canWrite: true, send: text => sent.push(text) }, room, storage: null });
+    const { workspace, service, q, bar } = await voiceBar({ transcriber });
+    assert(!q('#listen').disabled && q('#listen').getAttribute('aria-pressed') === 'false');
+    q('#listen').click(); await wait(50);
+    assert(service.enabled && transcriber.enabled && q('#listen').getAttribute('aria-pressed') === 'true');
+    onSegment({ text: 'Ágora, adiciona uma tabela', startedAt: 1, durationMs: 800 }); await wait(40);
+    assert(workspace.instances().length === 1 && sent.length === 0, 'commands only: nothing went to the call transcript');
+    assert(/Adicionei/.test(q('#message').textContent));
+    q('#listen').click(); await wait(20);
+    assert(!service.enabled && !transcriber.enabled, 'off: the voice stops listening, and the transcription it started stops with it');
+    bar.remove();
+    transcriber.destroy();
+});
+
 // --- port types ---
 
 const coreTypes = () => { const types = new TypeRegistry(); registerCoreTypes(types); return types; };
@@ -3077,6 +3151,228 @@ test('recordings component says so when the workspace has no server', async () =
     await element.whenLoaded();
     assert(element.rootNode.querySelector('#notice').hidden === false && element.rootNode.querySelector('#bar').hidden === true);
     element.dispose(); element.remove();
+});
+
+// --- voice commands (docs 06, 08; R-VOICE-*) ---
+
+const voiceWorkspace = async ({ role = 'owner' } = {}) => {
+    const registry = new ComponentRegistry();
+    await registerCoreComponents(registry);
+    const doc = await openDoc();
+    doc.role = role;
+    return new Workspace({ doc, registry, user: { id: 'urn:user:voice' } });
+};
+
+test('voice: the rules interpreter picks the command and cuts the phrases out of the sentence', () => {
+    const rules = new RulesInterpreter();
+    const table = [
+        ['adiciona uma tabela', 'add', { what: 'uma tabela' }],
+        ['Adiciona notas à direita da tabela', 'add', { what: 'notas', side: 'right', near: 'tabela' }],
+        ['abre um grafo ao lado das notas', 'add', { what: 'um grafo', side: 'right', near: 'notas' }],
+        ['cria uma tabela embaixo das notas', 'add', { what: 'uma tabela', side: 'bottom', near: 'notas' }],
+        ['adiciona o chat à esquerda', 'add', { what: 'o chat', side: 'left' }],
+        ['remove as notas', 'remove', { what: 'as notas' }],
+        ['Renomeia a tabela para Clientes Ativos.', 'rename', { what: 'a tabela', name: 'Clientes Ativos' }],
+        ['duplica esta janela', 'duplicate', { what: 'esta janela' }],
+        ['conecta a busca na tabela', 'connect', { from: 'a busca', to: 'tabela' }],
+        ['desconecta a busca da tabela', 'disconnect', { from: 'a busca', to: 'tabela' }],
+        ['move a tabela para a esquerda', 'move', { what: 'a tabela', side: 'left' }],
+        ['põe as notas embaixo', 'move', { what: 'as notas', side: 'bottom' }],
+        ['foca nas notas', 'focus', { what: 'notas' }],
+        ['vai para a tabela', 'focus', { what: 'a tabela' }],
+        ['anota: comprar passagens', 'note', { text: 'comprar passagens' }],
+        ['Escreve no chat: já volto!', 'chat', { text: 'já volto' }],
+        ['desfaz', 'undo', {}], ['refaz', 'redo', {}], ['quais comandos?', 'help', {}],
+        ['o que tem na tela?', 'describe', {}], ['para de transcrever', 'stop-transcribing', {}],
+        ['mostra como grafo', 'run-action', { action: 'mostrar como grafo' }],
+    ];
+    for (const [sentence, command, args] of table) {
+        const call = rules.interpret(sentence);
+        assert(call?.command === command, `"${sentence}" -> ${call?.command}, expected ${command}`);
+        for (const [key, value] of Object.entries(args)) assert(call.args[key] === value, `"${sentence}": ${key} = "${call.args[key]}", expected "${value}"`);
+    }
+    assert(rules.interpret('o relatório ficou muito bom') === null && rules.interpret('') === null, 'conversation is not a command');
+    assert(rules.interpret('mostrar como grafo', { actionTitles: ['Mostrar como grafo'] }).command === 'run-action', 'an action title on screen is a command');
+});
+
+const sweepRules = async file => {
+    const data = await (await fetch(`fixtures/${file}`)).json();
+    const rules = new RulesInterpreter();
+    const result = { total: 0, understood: 0, swaps: [], conversation: [] };
+    for (const [command, sentences] of Object.entries(data)) for (const sentence of sentences) {
+        result.total++;
+        const got = rules.interpret(sentence)?.command ?? 'none';
+        if (got === command) result.understood++;
+        else if (command === 'none') result.conversation.push(sentence);
+        else if (got !== 'none') result.swaps.push(`${sentence} -> ${got}`);
+    }
+    return result;
+};
+
+test('voice: the grammar understands the development paraphrases and never swaps one command for another', async () => {
+    const result = await sweepRules('voice_commands_pt.json');
+    assert(result.swaps.length === 0, result.swaps.join('; '));
+    assert(result.conversation.length === 0, `conversation taken as commands: ${result.conversation.join('; ')}`);
+    assert(result.understood / result.total >= 0.95, `understood ${result.understood}/${result.total}`);
+});
+
+//Sentences the grammar was NOT written against: the honest measure (docs/spike-laya.md). The floor is not the goal, raise it as it grows.
+test('voice: the grammar generalizes to held-out paraphrases; chatter that looks like a command is harmless after the wake word', async () => {
+    const result = await sweepRules('voice_commands_pt_heldout.json');
+    assert(result.swaps.length === 0, result.swaps.join('; '));
+    assert(result.understood / result.total >= 0.9, `understood ${result.understood}/${result.total}`);
+
+    //The grammar does take some chatter for a command ("põe a mesa", "fecha a porta"); what protects the workspace is that the command
+    //then finds nothing it knows how to act on, so it changes nothing (and a destructive one has nothing to ask about)
+    const workspace = await voiceWorkspace();
+    workspace.addInstance('ultima-table'); workspace.addInstance('ultima-notes');
+    const before = JSON.stringify(workspace.doc.get(''));
+    const service = new VoiceCommandService({ workspace, maxPerMinute: 1000 });
+    const chatter = (await (await fetch('fixtures/voice_commands_pt_heldout.json')).json()).none;
+    for (const sentence of chatter) {
+        const event = await service.handle(`Ágora, ${sentence}`);
+        assert(event.type !== 'confirm', `"${sentence}" asked to confirm: ${event.message}`);
+    }
+    assert(JSON.stringify(workspace.doc.get('')) === before, 'chatter after the wake word changed the workspace');
+});
+
+test('voice: names of components and windows resolve without accents or articles, and ambiguity is reported', async () => {
+    const workspace = await voiceWorkspace();
+    assert(resolveType(workspace.registry, 'uma tabela')[0].name === 'ultima-table');
+    assert(resolveType(workspace.registry, 'as notas')[0].name === 'ultima-notes');
+    assert(resolveType(workspace.registry, 'transcrição')[0].name === 'ultima-transcript');
+    assert(resolveType(workspace.registry, 'banana').length === 0);
+    const notes = workspace.addInstance('ultima-notes'), table = workspace.addInstance('ultima-table', { label: 'Notícias' }), other = workspace.addInstance('ultima-notes', { label: 'Ata' });
+    const description = workspace.describe();
+    assert(resolveInstance(description, workspace.registry, 'a tabela de noticias').id === table);
+    assert(resolveInstance(description, workspace.registry, 'ata').id === other);
+    assert(resolveInstance(description, workspace.registry, 'as notas').ambiguous?.length === 2, 'two notes windows: ask which');
+    assert(resolveInstance(description, workspace.registry, 'a primeira janela').id === notes);
+    assert(resolveInstance(description, workspace.registry, 'a última janela').id === other);
+    assert(resolveInstance(description, workspace.registry, 'o grafo').missing === true);
+    workspace.setFocus(table);
+    assert(resolveInstance(workspace.describe(), workspace.registry, 'esta janela').id === table, '"esta" means the focused window');
+});
+
+test('voice: workspace.describe is small, holds no content, and focus is view state outside the document', async () => {
+    const workspace = await voiceWorkspace();
+    const id = workspace.addInstance('ultima-notes');
+    workspace.sharedText(id).setText('segredo '.repeat(500));
+    workspace.setFocus(id);
+    const description = workspace.describe();
+    assert(description.focus === id && description.instances[0].type === 'ultima-notes');
+    assert(JSON.stringify(description).length < 2000 && !JSON.stringify(description).includes('segredo'), 'describe carries ids and labels, never content');
+    assert(workspace.doc.get('focus') === undefined && !JSON.stringify(workspace.doc.get('')).includes('"focus"'), 'focus is not in the shared document');
+    workspace.removeInstance(id);
+    assert(workspace.focusedId === null, 'a removed window is no longer focused');
+});
+
+test('voice: duplicateInstance copies config, label and notes next to the original, as one undo step', async () => {
+    const workspace = await voiceWorkspace();
+    const id = workspace.addInstance('ultima-notes', { label: 'Ata' });
+    workspace.sharedText(id).setText('pauta');
+    const steps = workspace.layout.panelIds().length;
+    const copy = workspace.duplicateInstance(id, { createdVia: 'voice' });
+    assert(workspace.instance(copy).label === 'Ata (cópia)' && workspace.instance(copy).createdVia === 'voice');
+    assert(workspace.sharedText(copy).getText() === 'pauta' && workspace.layout.findPanelOf(copy) === workspace.layout.findPanelOf(id));
+    workspace.undo();
+    assert(workspace.instance(copy) === null && workspace.instance(id), 'one undo removes only the copy');
+    assert(workspace.layout.panelIds().length === steps);
+});
+
+test('voice: commands go through the Workspace: one undo step each, createdVia voice, roles respected', async () => {
+    const workspace = await voiceWorkspace();
+    const commands = createCommandRegistry();
+    const added = await commands.execute(workspace, { command: 'add', args: { what: 'uma tabela' } });
+    assert(added.ok && workspace.instance(added.id).createdVia === 'voice' && workspace.focusedId === added.id, added.message);
+    const beside = await commands.execute(workspace, { command: 'add', args: { what: 'notas', near: 'a tabela', side: 'right' } });
+    assert(beside.ok && workspace.layout.tree().kind === 'split', 'next to the table: a split');
+    assert((await commands.execute(workspace, { command: 'rename', args: { what: 'a tabela', name: 'Clientes' } })).ok && workspace.instance(added.id).label === 'Clientes');
+    assert((await commands.execute(workspace, { command: 'undo', args: {} })).ok && workspace.instance(added.id).label === 'Tabela', 'undo reverts the rename only');
+    assert((await commands.execute(workspace, { command: 'note', args: { text: 'comprar passagens' } })).ok && workspace.sharedText(beside.id).getText() === 'comprar passagens\n');
+
+    const missing = await commands.execute(workspace, { command: 'remove', args: { what: 'o grafo' } });
+    assert(!missing.ok && missing.reason === 'failed' && /Não achei/.test(missing.message), 'a window that is not there is said, not thrown');
+    assert((await commands.execute(workspace, { command: 'nope', args: {} })).reason === 'unknown');
+    assert((await commands.execute(workspace, { command: 'add', args: {} })).reason === 'missing');
+
+    const viewer = await voiceWorkspace({ role: 'viewer' });
+    const refused = await commands.execute(viewer, { command: 'add', args: { what: 'tabela' } });
+    assert(!refused.ok && refused.reason === 'forbidden' && viewer.instances().length === 0, 'a viewer cannot compose by voice either');
+    assert((await commands.execute(viewer, { command: 'describe', args: {} })).ok, 'but may ask what is on screen');
+});
+
+test('voice: remove and disconnect ask first and run only when confirmed', async () => {
+    const workspace = await voiceWorkspace();
+    const commands = createCommandRegistry();
+    workspace.addInstance('ultima-notes');
+    const asked = await commands.execute(workspace, { command: 'remove', args: { what: 'as notas' } });
+    assert(asked.needsConfirmation && /Remover/.test(asked.question) && workspace.instances().length === 1, 'nothing is removed before the yes');
+    const done = await commands.execute(workspace, { command: 'remove', args: { what: 'as notas' } }, { confirmed: true });
+    assert(done.ok && workspace.instances().length === 0);
+});
+
+test('voice: the service ignores conversation, needs the wake word, and confirms destructive commands with "sim"', async () => {
+    const workspace = await voiceWorkspace();
+    const service = new VoiceCommandService({ workspace });
+    const events = [];
+    service.onEvent(event => events.push(event));
+    assert((await service.handle('agora eu vou falar do relatório')).type === 'unknown', 'a sentence that starts with "agora" is only tried, and says it did not understand');
+    assert((await service.handle('vamos adicionar uma tabela')).type === 'ignored' && workspace.instances().length === 0, 'no wake word: not for us');
+    assert((await service.handle('Ágora, adiciona uma tabela.')).type === 'done' && workspace.instances().length === 1);
+    assert((await service.handle('agora remove a tabela')).type === 'confirm' && service.pending && workspace.instances().length === 1);
+    assert((await service.handle('talvez mais tarde')).type === 'ignored' && service.pending, 'chatter does not answer the question');
+    assert((await service.handle('sim')).type === 'done' && workspace.instances().length === 0);
+    await service.handle('agora adiciona notas');
+    await service.handle('agora remove as notas');
+    assert((await service.handle('não')).message === 'Cancelado.' && workspace.instances().length === 1 && !service.pending);
+    assert((await service.handle('adiciona uma tabela', { source: 'typed' })).type === 'done', 'typed commands need no wake word');
+    assert((await service.handle('Ágora, o que tem na tela?', { source: 'typed' })).type === 'done', 'but a typed one may start with it');
+    assert(events.some(event => event.type === 'heard'), 'the person sees what was heard');
+});
+
+test('voice: a pending question expires, a low-confidence call is asked back, and a burst of commands is rate limited', async () => {
+    const workspace = await voiceWorkspace();
+    let clock = 1000;
+    const guess = { interpret: () => ({ command: 'add', args: { what: 'tabela' }, confidence: 0.3 }) };
+    const service = new VoiceCommandService({ workspace, interpreter: guess, now: () => clock, pendingMs: 5000, maxPerMinute: 3 });
+    assert((await service.handle('agora qualquer coisa')).type === 'confirm' && workspace.instances().length === 0, 'unsure: asks, does not act');
+    clock += 6000;
+    assert((await service.handle('sim')).type === 'ignored' && workspace.instances().length === 0, 'an old question is forgotten');
+    await service.handle('agora qualquer coisa');
+    assert((await service.handle('sim')).type === 'done' && workspace.instances().length === 1);
+
+    const fast = new VoiceCommandService({ workspace, now: () => clock, maxPerMinute: 3 });
+    const types = [];
+    for (let i = 0; i < 5; i++) types.push((await fast.handle('agora quais comandos')).type);
+    assert(types.filter(type => type === 'done').length === 3 && types.includes('limited'), types.join());
+    clock += 61000;
+    assert((await fast.handle('agora quais comandos')).type === 'done', 'the limit is per minute');
+});
+
+test('voice: enable() listens only to the person\'s own speech and disable() stops; the log can be left out', async () => {
+    const workspace = await voiceWorkspace();
+    const sent = [];
+    const client = { canWrite: true, send: (text) => sent.push(text) };
+    let onSegment = null;
+    const room = { on: () => () => {}, joined: true, localAudioTrack: {}, setTranscribing() {} };
+    const transcriber = new Transcriber({ engine: { supported: true, load: async () => {}, start: (track, options) => { onSegment = options.onSegment; return { stop() {} }; } }, client, room, storage: null });
+    workspace.doc.transcriber = transcriber;
+    const service = new VoiceCommandService({ workspace });
+    await transcriber.enable();
+    service.enable();
+    onSegment({ text: 'Ágora, adiciona uma tabela', startedAt: 1, durationMs: 1000 });
+    await wait(20);
+    assert(workspace.instances().length === 1 && sent.length === 1, 'by default the sentence is also transcribed');
+    transcriber.setSendToLog(false);
+    onSegment({ text: 'Ágora, adiciona notas', startedAt: 2, durationMs: 1000 });
+    await wait(20);
+    assert(workspace.instances().length === 2 && sent.length === 1, 'commands-only: used locally, not sent to the call transcript');
+    service.disable();
+    onSegment({ text: 'Ágora, adiciona um grafo', startedAt: 3, durationMs: 1000 });
+    await wait(20);
+    assert(workspace.instances().length === 2, 'off means off');
+    transcriber.destroy();
 });
 
 // --- runner ---

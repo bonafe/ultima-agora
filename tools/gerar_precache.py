@@ -15,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-PASTAS = ["core", "collaboration", "conference", "transcription", "components", "ui", "vendor", "adapters", "site"]
+PASTAS = ["core", "collaboration", "conference", "transcription", "voice", "components", "ui", "vendor", "adapters", "site"]
 EXTENSOES = {".js", ".mjs", ".html", ".css", ".json", ".svg", ".png", ".ico", ".woff2"}
 EXCLUIR = {"README.md", "ORIGEM.txt", "precache.json"}
 PASTAS_EXCLUIDAS = {"node_modules", "tests"}

@@ -1,0 +1,20 @@
+<link rel="stylesheet" href="agora-voice.css">
+<section class="voice" aria-label="Comandos por voz">
+    <div class="row">
+        <button id="listen" type="button" aria-pressed="false" title="Escutar a sua voz: diga &quot;Ágora, …&quot; e um comando">🎙 Ouvir meus comandos</button>
+        <label class="opt" title="A frase falada é usada só aqui, no seu navegador, e não entra na transcrição da chamada"><input id="only-commands" type="checkbox" checked> só comandos (não transcrever)</label>
+        <label class="opt"><input id="speak" type="checkbox"> responder em voz alta</label>
+        <span id="state" class="state" role="status"></span>
+        <button id="show-commands" type="button" aria-expanded="false" aria-controls="commands">Comandos</button>
+    </div>
+    <form id="line" class="row" autocomplete="off">
+        <label class="grow"><span class="sr-only">Digite um comando</span><input id="text" type="text" placeholder="Digite um comando — ex.: adiciona uma tabela" enterkeyhint="send"></label>
+        <button type="submit">Executar</button>
+    </form>
+    <div id="feedback" class="feedback" role="status" aria-live="polite" hidden>
+        <span id="heard" class="heard"></span>
+        <span id="message" class="message"></span>
+        <span id="actions" class="actions"></span>
+    </div>
+    <ul id="commands" class="commands" hidden></ul>
+</section>

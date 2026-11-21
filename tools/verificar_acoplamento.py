@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 RAIZ = Path(os.environ.get("AGORA_RAIZ") or Path(__file__).resolve().parent.parent)
-NUCLEO = ["core", "collaboration", "ui", "components", "adapters"]
+NUCLEO = ["core", "collaboration", "ui", "components", "adapters", "voice"]
 PODEM_IMPORTAR_CRDT = ("collaboration/", "vendor/")
 IMPORT_PROIBIDO = re.compile(r"""(?:from|import)\s*\(?\s*['"][^'"]*(?:\byjs\b|y-protocols|lib0|livekit)[^'"]*['"]""", re.I)
 TERMOS_DOMINIO = re.compile(r"\b(Entity|Entities|Claim|Evidence|Provenance|Artifact|Organization|Organizacao|Empresa|Pessoa)\b")

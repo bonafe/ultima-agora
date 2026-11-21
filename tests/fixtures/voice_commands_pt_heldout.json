@@ -1,0 +1,19 @@
+{
+ "add": ["inclui um grafo ao lado da tabela","quero uma tabela aqui","cria um chat à direita","me traz as notas","abre uma tabela nova","adiciona o chat embaixo das notas","põe um grafo","faz um bloco de notas","preciso de um chat","coloca uma planilha à esquerda"],
+ "remove": ["apaga as notas","fecha a tabela","tira o grafo","não quero mais a planilha","pode remover o chat","exclui essa janela","some com as anotações","elimina o gráfico"],
+ "rename": ["renomeia as notas para Reunião","muda o nome da tabela para Estoque","troca o título do grafo para Rede","chama o chat de Equipe","as notas agora se chamam Diário"],
+ "duplicate": ["duplica a tabela","copia as notas","faz uma cópia do grafo","clona o chat","quero outra igual a esta"],
+ "move": ["move o grafo para a direita","joga as notas para baixo","põe a tabela em cima","leva o chat para a esquerda","passa a planilha para cima","coloca o grafo embaixo"],
+ "focus": ["vai para o chat","foca na tabela","mostra as notas","me leva até o grafo","quero ver o chat","olha as anotações","seleciona a tabela"],
+ "connect": ["conecta as notas no chat","liga o grafo à tabela","conecta a tabela com o grafo","manda a saída da tabela para o grafo","faz a busca alimentar a tabela"],
+ "disconnect": ["desconecta o grafo da tabela","solta a busca da tabela","desconecta a tabela","corta a conexão entre o grafo e a tabela"],
+ "undo": ["desfaz isso","volta","errei, desfaz","desfazer","cancela o que eu fiz","tira o que eu fiz"],
+ "redo": ["refaz isso","refazer","traz de volta o que eu desfiz","de novo o que desfiz"],
+ "run-action": ["mostra isso como grafo","transforma em grafo","quero ver como grafo","exibe como grafo"],
+ "note": ["anota que a reunião foi adiada","anota: ligar para o contador","registra nas notas o prazo de sexta","toma nota: pedir orçamento","anote que o cliente confirmou"],
+ "chat": ["manda no chat que cheguei","escreve no chat: bom dia","diz no chat obrigado a todos","posta no chat que já começou"],
+ "stop-transcribing": ["para de transcrever","desliga a transcrição","não transcreve mais","chega de transcrever","interrompe a transcrição"],
+ "describe": ["o que tem aberto?","o que está na tela?","lista as janelas","quais janelas eu tenho?","me diz o que tem aqui"],
+ "help": ["que comandos existem?","me mostra os comandos","o que você pode fazer?","ajuda"],
+ "none": ["agora eu preciso sair para pegar o carro","acho que a gente deveria falar com o jurídico","o relatório de março está pronto","você pode me mandar o arquivo depois?","depois eu mostro como fica o gráfico lá no escritório","eu quero um café antes de começar","a tabela de preços mudou na semana passada","não esquece de anotar o telefone dela","vou criar uma conta nova no banco","pode ser que o cliente desista","o chat da empresa está fora do ar","a gente adiciona isso na pauta da próxima reunião","fecha a porta, por favor, está barulhento","quero ver como ficou o jogo ontem","o grafo que você mandou ficou ótimo","liga para mim mais tarde","tira uma foto da lousa","desfaz esse nó que está no cabo","põe a mesa para o almoço","manda um abraço para o pessoal","volta daqui a pouco","faz sentido o que você disse","abre a janela que está quente","me dá um minuto"]
+}

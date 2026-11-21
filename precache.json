@@ -1,5 +1,5 @@
 {
- "version": "1567e6eedfa9cf81",
+ "version": "879a2acac7a0398f",
  "files": [
   "./",
   "adapters/dev/dev_host.js",
@@ -56,6 +56,9 @@
   "conference/conference_provider.js",
   "conference/mesh/mesh_provider.js",
   "conference/mesh/voice_meter.js",
+  "core/commands/catalog.js",
+  "core/commands/registry.js",
+  "core/commands/resolve.js",
   "core/components/agora_component.js",
   "core/components/box.js",
   "core/components/mix.js",
@@ -94,6 +97,9 @@
   "ui/shell/agora-shell.css",
   "ui/shell/agora-shell.html",
   "ui/shell/agora-shell.js",
+  "ui/voice/agora-voice.css",
+  "ui/voice/agora-voice.html",
+  "ui/voice/agora-voice.js",
   "ui/welcome/welcome_template.js",
   "ui/workspace/agora-workspace.css",
   "ui/workspace/agora-workspace.html",
@@ -108,6 +114,8 @@
   "vendor/ultima/reactive_component.js",
   "vendor/whisper/ort-wasm-simd-threaded.mjs",
   "vendor/whisper/transformers.min.js",
-  "vendor/yjs/yjs.js"
+  "vendor/yjs/yjs.js",
+  "voice/interpreters/rules.js",
+  "voice/service.js"
  ]
 }

@@ -1,38 +1,166 @@
-# Ultima Agora
+# Ultima Ágora
 
-Ambiente colaborativo e componível construído sobre o [UltimaJS](../ultima): usuários montam
-**workspaces persistentes** a partir de componentes com portas tipadas e trabalham neles juntos.
-A primeira aplicação de referência é o [Inteligência Aberta](../inteligencia-aberta).
+**Um espaço de trabalho que você monta com peças vivas e divide com outras pessoas, em tempo real.**
 
-- Especificação: [`docs/especificacao/`](docs/especificacao/00-indice.md)
-- Estado: **M1 (workspace local)** — shell, paleta, layout com painéis e abas, inspetor, notas e texto, persistência em IndexedDB. Sem backend: `python3 -m http.server 8080` e abra `http://localhost:8080/` (a página de apresentação; o espaço de trabalho é `/app.html`) (não use a 8000, que é a do portal do Inteligência Aberta; abrir o arquivo direto, por `file://`, não funciona: módulos ES exigem HTTP).
-- M2 pronto: barramento tipado, conexões, ações que criam componentes, `ultima-table` e `ultima-graph`; contrato do componente congelado em `docs/contrato-agoracomponent.md`.
-- M3 pronto: colaboração em tempo real (Yjs), presença, papéis aplicados no servidor. Para testar com várias pessoas:
-  `cd server/agora-sync && npm install && AGORA_DEV_AUTH=1 npm start`, depois abra
-  `http://localhost:8080/app.html?sync=http://localhost:8787&name=Maria` e, **em outra origem** (`127.0.0.1` ou o IP da máquina,
-  que têm IndexedDB próprio), o mesmo link do workspace com `&name=Carlos` (ou `&role=viewer`).
-- M4 pronto: o Agora roda dentro do Inteligência Aberta (`/agora/`), com hospedeiro Django, papéis limitados pelo papel na organização, componentes `ia-search` e `ia-entity`, e `agora-sync` no compose. A integração vive no repositório do IA (branch `agora-m4`, ADR 013/014); este repositório continua sem conhecer dado de domínio. Para levar uma versão nova ao IA: `scripts/sincronizar_agora.sh` no IA.
-- M5 pronto: chat (servidor, cliente offline, painel), suíte de aceite com várias pessoas contra o servidor real, contrato de todos os componentes e verificação de acoplamento. **Rastreabilidade dos 23 critérios: `docs/aceite-mvp.md`** (14 cobertos, 9 parciais com a lacuna escrita).
-- **Docker (app + servidor de tempo real):** `docker compose up -d --build` sobe o app em `http://localhost:8080/` e `https://<host>:8443/`
-  (nginx, com o `agora-sync` atrás de `/sync/`, na mesma origem) e o `agora-sync` em `:8787` (dados no volume `agora-data`;
-  `docker compose down` para). Para outras máquinas, informe o IP que elas usam, pois ele entra no certificado:
-  `AGORA_HOSTS=192.168.2.155 docker compose up -d --build`, e passe `https://192.168.2.155:8443/app.html?sync=https://192.168.2.155:8443/sync&name=Maria`
-  mais o `#/workspace/<id>` a quem for entrar. O certificado é autoassinado (o navegador pede uma confirmação, uma vez por máquina).
-  O compose liga `AGORA_DEV_AUTH=1` (qualquer um que alcance o servidor obtém token e escolhe o próprio papel): só em rede
-  confiável. Produção: `server/agora-sync/README.md`.
-- **Chamada de áudio e vídeo** (botão 📹 no cabeçalho, ou o componente `ultima-conference`): WebRTC em malha entre os navegadores, com a
-  sinalização pelo `agora-sync` (D-36). Câmera e microfone **só ligam quando você marca**; sair ou desligar encerra a captura. Exigem
-  `localhost` ou HTTPS (por isso o `https://` acima). Pensada para grupos pequenos (até ~4–6 pessoas); entre redes diferentes pode
-  precisar de um TURN (`AGORA_ICE_SERVERS`). Tela compartilhada: próxima etapa.
-- **Gravação e integração** (docs 14): cada pessoa grava o próprio áudio, com consentimento visível, em pedaços enviados durante a chamada (componente **Gravações** para ouvir e baixar; transcrição em `.txt/.vtt/.srt`). O servidor avisa outros sistemas por webhook assinado (`AGORA_WEBHOOK_URL`, `AGORA_WEBHOOK_SECRET`). Depois de atualizar, `docker compose up -d --build`. Próximos passos (vídeo, S3/Postgres, escala): `docs/especificacao/14-midia-e-integracao.md`, seção 14.9.
-- **Transcrição da chamada** (botão “Transcrever minha fala” na chamada; componente `ultima-transcript`): Whisper **no navegador** (D-37). Cada
-  pessoa é transcrita no próprio dispositivo, o áudio não sai dele e só o texto vai ao workspace, com a legenda no tile e o histórico
-  por pessoa. Instale o modelo uma vez (fica fora do git, ~80 MB): `tools/baixar_modelo_whisper.py` (`tiny` ~41 MB, `small` ~250 MB).
-  O Docker já serve `models/` e liga o isolamento de origem (vários *threads*: ~2× mais rápido). Whisper não faz streaming: a legenda
-  aparece uns segundos depois de cada pausa. Retenção do registro: `TRANSCRIPT_RETENTION_DAYS` (0 = guarda tudo).
-- **Site** (`index.html`, `hospedar.html`, `site/`): a página de apresentação da Ágora Digital, com o fundo animado pela rolagem, e o guia de hospedagem para quem não programa. Funciona no GitHub Pages (estático); o espaço de trabalho fica em `app.html`. Decisão D-38. O primeiro acesso ao app abre o **workspace de boas-vindas** (um exemplo funcionando: guia, caderno, tabela ligada a um grafo); o botão *Boas-vindas* traz outro.
-- Próximo: fase 2 (conexões visuais, conferência com LiveKit, quadro, templates, histórico, agentes em modo proposta); e a cifra do armazenamento local (D-17).
+O Ultima Ágora é uma camada colaborativa sobre o [UltimaJS](../ultima). Em vez de telas fixas, cada pessoa
+**compõe o próprio espaço** com componentes que têm portas tipadas (notas, tabela, grafo, chat, chamada...), liga uma peça
+na outra e trabalha ali junto com os outros. O espaço é **persistente**: quando todos saem, ele continua como foi deixado.
+
+> Sem build, sem dependências no navegador: JavaScript puro, módulos ES nativos. Funciona offline depois da primeira visita.
+
+[Conhecer o site](https://bonafe.github.io/ultima-agora/) ·
+[Rodar em casa](https://bonafe.github.io/ultima-agora/hospedar.html) ·
+[Falar com a Ágora (comandos de voz)](https://bonafe.github.io/ultima-agora/comandos.html) ·
+[Documentação](docs/README.md) ·
+[Especificação](docs/especificacao/00-indice.md)
+
+---
+
+## Experimente em 30 segundos
+
+```bash
+python3 -m http.server 8080        # na raiz do repositório
+```
+
+Abra <http://localhost:8080/> (a apresentação) e clique em **Entrar na Ágora**, ou vá direto a
+<http://localhost:8080/app.html>. O primeiro acesso abre um **workspace de boas-vindas**: um exemplo funcionando, com um guia,
+um caderno e uma tabela ligada a um grafo.
+
+> Use a porta 8080 (a 8000 é a do portal do Inteligência Aberta). Abrir o arquivo direto, por `file://`, não funciona: módulos ES
+> exigem HTTP.
+
+**Para trabalhar com outras pessoas** (tempo real, presença, chat, chamada), suba também o servidor de sincronização:
+
+```bash
+cd server/agora-sync && npm install && AGORA_DEV_AUTH=1 npm start
+# em outro terminal, na raiz:  python3 -m http.server 8080
+# abra  http://localhost:8080/app.html?sync=http://localhost:8787&name=Maria
+```
+
+Ou tudo de uma vez com Docker (app, HTTPS e servidor, atrás do mesmo endereço): `docker compose up -d --build`.
+O passo a passo para quem não programa está em [Rodar em casa](https://bonafe.github.io/ultima-agora/hospedar.html); o de produção, em
+[`server/agora-sync/README.md`](server/agora-sync/README.md).
+
+---
+
+## O que já funciona
+
+| Área | O que você faz |
+|---|---|
+| **Composição** | Escolhe peças na paleta, arruma em painéis, abas e divisões, **liga uma peça a outra** por portas tipadas. Uma tabela vira um grafo com um clique, num único passo que se desfaz. |
+| **Janelas** | Arrasta janelas para acoplar, **flutuar**, abrir em **outra janela do navegador** (outro monitor) ou fixar por cima de tudo (Picture-in-Picture). |
+| **Colaboração** | Várias pessoas editam ao mesmo tempo (Yjs), com **presença** (quem está aqui, o que olha), papéis (`owner`, `editor`, `participant`, `viewer`) **aplicados no servidor** e edição offline que se funde na volta. |
+| **Conversa** | **Chat** persistente com menções, **chamada de áudio e vídeo** em malha (WebRTC) e **convite por QR code**. Câmera e microfone só ligam quando você marca. |
+| **Transcrição** | O Whisper roda **no seu navegador**: o áudio não sai do seu aparelho, só o texto vai ao workspace. Exporta em `.txt`, `.vtt`, `.srt`. |
+| **Gravação** | Cada pessoa grava a própria trilha, com consentimento visível, enviada em pedaços durante a chamada. O servidor avisa outros sistemas por **webhook assinado**. |
+| **Comandos por voz** | Diga "Ágora, adiciona uma tabela à direita das notas" (ou digite). As regras entendem; um **modelo de decisão opcional** sugere o que elas não pegaram. Veja o [guia de comandos](https://bonafe.github.io/ultima-agora/comandos.html). |
+| **Celular** | Cada componente responde à largura da própria caixa; no telefone o workspace mostra uma janela por vez, com barra inferior. |
+| **Offline e acessível** | Service worker, cache local, reconexão automática; controles nomeados e alcançáveis por teclado. |
+
+O que **ainda não** existe (e está dito com franqueza): conexões visuais, quadro branco, histórico de versões, agentes que
+manipulam o workspace, vídeo gravado e tela compartilhada. Veja o [roadmap](docs/especificacao/11-roadmap-mvp.md).
+
+---
+
+## Como funciona
+
+```
+ navegador (local-first)                       servidores (opcionais)
+┌───────────────────────────────┐
+│  shell · paleta · inspetor    │   WebSocket   ┌──────────────────────┐
+│  workspace (layout em árvore) │ ◄───────────► │  agora-sync (Node)   │  tokens, papéis, chat,
+│  componentes ──portas──► bus  │   /v1 (HTTP)  │  Yjs · chamada · API │  gravações, webhooks
+│  documento do workspace (Yjs) │ ◄───────────► └──────────┬───────────┘
+│  IndexedDB · service worker   │                          │ POST /choose
+│  Whisper · Laya (opcionais)   │                          ▼
+└───────────────────────────────┘               ┌──────────────────────┐
+                                                │ agora-model (Python) │  modelo de decisão
+                                                │ laya · openai_compat │  de comandos (opcional)
+                                                └──────────────────────┘
+```
+
+Quatro ideias sustentam o projeto:
+
+1. **O workspace é um documento.** Composição, layout, conexões e conteúdo escrito à mão vivem num documento colaborativo.
+   Dados de domínio **não**: o documento guarda só *referências* (R-DOC-3).
+2. **Tudo passa por contratos.** O estado colaborativo (`StateStore`), a conferência (`ConferenceProvider`), a transcrição
+   (`Transcriber`) e o modelo de decisão (`ChoiceBackend`) são interfaces pequenas. Yjs, WebRTC, Whisper e Laya são *detalhes atrás
+   de adaptadores*, trocáveis sem mexer no resto.
+3. **Local-first.** Seu trabalho existe no seu aparelho; o servidor sincroniza, não é o dono.
+4. **Máquinas à vista.** O que um modelo ou agente faz passa pela mesma API e pelas mesmas permissões das pessoas, e só *sugere*
+   quando não tem certeza. Nada executa em silêncio.
+
+---
+
+## Mapa do repositório
+
+| Pasta | Para que serve |
+|---|---|
+| `core/` | Componentes (`AgoraComponent`), registro e manifestos, workspace e layout, barramento, comandos |
+| `collaboration/` | Documento (`MemoryStateStore`, `YjsWorkspaceDoc`), provedores de sync, presença. **Só aqui se importa o Yjs** |
+| `components/` | Catálogo: notas, texto, tabela, grafo, chat, chamada, transcrição, gravações |
+| `ui/` | Shell, paleta, workspace, inspetor, chamada, barra de comandos, convite |
+| `voice/` | Comandos por voz: serviço, interpretador de regras, modelo de decisão (navegador e servidor) |
+| `transcription/`, `conference/` | Whisper no navegador; chamada WebRTC em malha |
+| `adapters/dev/` | `DevHost`, o hospedeiro de desenvolvimento |
+| `server/agora-sync/` | Servidor de tempo real (Node). **`server/agora-model/`**: modelo de decisão (Python) |
+| `vendor/` | Bibliotecas de terceiros já compiladas, com versão e hash (UltimaJS, Yjs, Whisper, ONNX Runtime, uqr) |
+| `site/`, `index.html`, `hospedar.html`, `comandos.html` | O site (estático, GitHub Pages) |
+| `docs/` | Especificação (em português), contratos, aceite e medições |
+| `tests/`, `tools/` | Testes sem dependências e ferramentas (modelos, precache, acoplamento) |
+
+---
 
 ## Testes
 
-Sem build nem dependências. Sirva a raiz (`python3 -m http.server`) e abra `/tests/`, ou rode `tests/run.sh` (Chrome headless).
+Sem build nem dependências no navegador. Há três suítes e uma de servidor:
+
+| Comando | O que roda |
+|---|---|
+| `tests/run.sh` | Suíte do navegador em Chrome headless (é o que o CI roda), mais a verificação de acoplamento e do precache offline |
+| `tests/run_acceptance.sh` | Várias pessoas, cada uma um cliente completo, contra o servidor real: os critérios de aceite do MVP ([`docs/aceite-mvp.md`](docs/aceite-mvp.md)) |
+| `cd server/agora-sync && npm test` | Servidor de sincronização, chat, gravação, API |
+| `python3 -m unittest discover -s server/agora-model/tests` | Serviço do modelo de decisão |
+
+Toda correção de bug entra com um teste. Mudanças visíveis entram no [`CHANGELOG.md`](CHANGELOG.md).
+
+---
+
+## Modelos de IA (opcionais)
+
+Dois recursos usam modelos que **não vêm no repositório** (pesos grandes ficam em `models/`, fora do git):
+
+```bash
+tools/baixar_modelo_whisper.py      # transcrição (~80 MB; tiny ~41 MB, small ~250 MB)
+tools/baixar_modelo_laya.py         # modelo de decisão de comandos (~262 MB)
+```
+
+O modelo de decisão pode rodar **no navegador** (`?model=local`), **no servidor** (`?model=remote`, serviço `server/agora-model`,
+CPU ou GPU) ou **nos dois, em ordem** (`?model=auto`). O padrão é `off`: só as regras, instantâneas, sem nada sair do navegador.
+O servidor aceita apontar para **outro lugar** (o gateway do Inteligência Aberta, um vLLM, uma API externa). A fala só vai a um servidor
+se a pessoa escolheu, e é repassada e esquecida (decisão **D-44**). Medições e a conclusão honesta (o modelo ajuda a velocidade e o
+alcance, não o acerto) estão em [`docs/spike-laya.md`](docs/spike-laya.md).
+
+---
+
+## Documentação
+
+- [`docs/README.md`](docs/README.md): o mapa de toda a documentação
+- [`docs/especificacao/`](docs/especificacao/00-indice.md): requisitos (`R-…`) e decisões (`D-…`), começando pelo índice
+- [`docs/contrato-agoracomponent.md`](docs/contrato-agoracomponent.md): como escrever um componente novo
+- [`docs/aceite-mvp.md`](docs/aceite-mvp.md): critério por critério, o que está provado e o que falta
+- [`server/agora-sync/README.md`](server/agora-sync/README.md) e [`server/agora-model/README.md`](server/agora-model/README.md): os servidores
+- [`CLAUDE.md`](CLAUDE.md): convenções do código para quem (ou o quê) for contribuir
+
+**Idioma:** código, comentários e identificadores em inglês; documentação e textos de interface em português.
+
+---
+
+## Integração com o Inteligência Aberta
+
+O Ágora roda dentro do [Inteligência Aberta](../inteligencia-aberta) (`/agora/`), com hospedeiro Django, papéis limitados pelo papel na
+organização e componentes `ia-*`. Essa integração vive no repositório do IA; **este repositório não conhece dado de domínio**.
+
+## Licença
+
+[GNU AGPL v3](LICENSE).

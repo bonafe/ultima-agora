@@ -2349,14 +2349,17 @@ test('precache: every file in the list is served, and every component the regist
     assert(!list.files.some(f => f.startsWith('tests/') || f.startsWith('server/') || f.startsWith('docs/')), 'tests, server and docs do not belong in the app cache');
 });
 
-test('site: every local link of the landing and the hosting guide is served; the art draws at any point of the story', async () => {
-    for (const page of ['../index.html', '../hospedar.html']) {
+test('site: every local link of the landing, the hosting guide and the commands guide is served (and every #anchor exists); the art draws at any point of the story', async () => {
+    const parse = async page => new DOMParser().parseFromString(await (await fetch(page)).text(), 'text/html');
+    for (const page of ['../index.html', '../hospedar.html', '../comandos.html']) {
         const html = new DOMParser().parseFromString(await (await fetch(page)).text(), 'text/html');
         assert(html.title && html.querySelector('main') && html.querySelector('a[href="app.html"]'), `${page}: title, main and the way into the app`);
         for (const el of html.querySelectorAll('a[href], link[href], script[src]')) {
             const ref = el.getAttribute('href') ?? el.getAttribute('src');
-            if (/^(https?:|#|mailto:)/.test(ref)) continue;
-            assert((await fetch(`../${ref.split('#')[0] || './'}`, { method: 'HEAD' })).ok, `${page}: ${ref} is not served`);
+            if (/^(https?:|mailto:)/.test(ref)) continue;
+            const [file, fragment] = ref.split('#');
+            if (file) assert((await fetch(`../${file}`, { method: 'HEAD' })).ok, `${page}: ${ref} is not served`);
+            if (fragment) assert((await parse(file ? `../${file}` : page)).getElementById(fragment), `${page}: #${fragment} does not exist${file ? ` in ${file}` : ''}`);
         }
     }
     const { AgoraArt } = await import('../site/art.js');

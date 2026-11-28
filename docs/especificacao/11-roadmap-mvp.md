@@ -27,6 +27,12 @@ M3 pode começar em paralelo a M2 depois de M1, pois depende só do `StateStore`
 Adicionados por esta especificação como parte do MVP, por serem pré-requisitos e não extras:
 manifestos validados, papéis no servidor, limites de tamanho, undo/redo por usuário, suíte de contrato, classificação do workspace, auditoria mínima.
 
+> **Atualização (2026-11-21).** Vários itens listados abaixo como fora do MVP ou de fases futuras já foram entregues, e estão no
+> [`CHANGELOG`](../../CHANGELOG.md): áudio e vídeo em malha (D-36), transcrição no navegador (D-37), gravação por pessoa e webhooks
+> (D-40 a D-42), janelas flutuantes e em outra janela do navegador (D-39), interface para celular, convite por QR code e **comandos por
+> voz** com modelo de decisão opcional no navegador ou no servidor (D-44, [capítulo 15](15-comandos-por-voz.md)). A lista abaixo é a
+> proposta original e fica como registro.
+
 **Explicitamente fora do MVP:** conexões visuais, áudio/vídeo, whiteboard, cursores no canvas, templates, histórico de versões, canvas infinito, agentes manipulando o workspace, componentes remotos.
 
 ## 11.3 Fase 2 (proposta, seção 53)

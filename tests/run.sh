@@ -13,7 +13,9 @@ CHROME="${CHROME:-$(command -v google-chrome || command -v chromium || command -
 
 tools/gerar_precache.py --check || exit 1       # the offline app cache must list every runtime file
 tools/verificar_acoplamento.py || exit 1        # no Yjs outside collaboration/, no domain terms in the core
+tools/verificar_publicacao.py || exit 1         # everything the app imports is published (Pages) and cached offline
 python3 tools/test_verificar_acoplamento.py >/dev/null 2>&1 || { echo "the coupling checker itself is broken" >&2; exit 1; }
+python3 tools/test_verificar_publicacao.py >/dev/null 2>&1 || { echo "the publication checker itself is broken" >&2; exit 1; }
 
 PORT="${PORT:-8791}"
 DEBUG_PORT="${DEBUG_PORT:-9334}"

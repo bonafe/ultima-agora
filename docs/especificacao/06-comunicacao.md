@@ -79,6 +79,8 @@ O Inteligência Aberta trata voz como cidadã de primeira classe. O Agora hosped
 - **R-VOICE-2.** O shell e os componentes do núcleo devem ser operáveis por teclado e leitores de tela (7.8). Isso é pré-requisito para voz e acessibilidade.
 - **R-VOICE-3** (F3). Avaliar um canal de voz para o agente do workspace ("ditar" no chat/notas, ouvir respostas curtas), reaproveitando o contêiner de voz do Inteligência Aberta, sem acoplar o núcleo.
 
+> **Entregue em parte:** os **comandos por voz** (a pessoa fala ou digita e o workspace obedece, com o papel dela) e o modelo de decisão opcional estão descritos no [capítulo 15](15-comandos-por-voz.md). Ditar no chat e nas notas já existe como comandos (`chat`, `note`); a síntese de voz para respostas longas segue em aberto.
+
 ## 6.4 Notas colaborativas (`ultima-notes`)
 
 - **R-NOTES-1** (MVP). Edição simultânea de texto rico mínimo (cabeçalhos, listas, negrito/itálico, links, código) com cursores de colegas.

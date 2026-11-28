@@ -19,6 +19,7 @@
         <a class="brand" href="./">Ágora Digital<small>Ultima</small></a>
         <nav aria-label="Principal">
             <a href="#como">Como usar</a>
+            <a href="comandos.html">Comandos</a>
             <a href="hospedar.html">Rodar em casa</a>
             <a href="#portas">Documentação</a>
             <a class="button" href="app.html">Entrar na Ágora</a>
@@ -79,20 +80,36 @@
                 <p>O espaço fica guardado. Você volta amanhã e está tudo lá, e funciona até sem internet.</p>
                 <ul class="list">
                     <li><span class="tag now">já existe</span><span>Abas, divisões e painéis lado a lado.</span></li>
-                    <li><span class="tag soon">a caminho</span><span><b>Painéis flutuantes</b>, soltos sobre o espaço.</span></li>
-                    <li><span class="tag soon">a caminho</span><span><b>Várias janelas e vários aparelhos</b>: o celular como câmera e microfone, o notebook com o grafo, a TV com a sala. Cada aparelho tem o seu papel no mesmo espaço.</span></li>
+                    <li><span class="tag now">já existe</span><span><b>Painéis flutuantes</b>, soltos sobre o espaço, e <b>outra janela do navegador</b>: arraste uma peça para o outro monitor.</span></li>
+                    <li><span class="tag now">já existe</span><span><b>No celular</b>, o espaço se adapta: uma janela por vez, com uma barra embaixo para trocar.</span></li>
+                    <li><span class="tag soon">a caminho</span><span><b>Aparelhos com papéis</b>: o celular como câmera e microfone, o notebook com o grafo, a TV com a sala, todos no mesmo espaço.</span></li>
                 </ul>
+            </div>
+        </section>
+
+        <section class="chapter" id="voz" aria-labelledby="t-voz">
+            <div class="card reveal">
+                <p class="kicker">V · A voz</p>
+                <h2 id="t-voz">É só dizer</h2>
+                <p>Pedir é mais natural que arrastar. Diga <em>“Ágora, adiciona uma tabela à direita das notas”</em> e a tabela aparece ali. Se preferir, digite: funciona igual, e é assim que quem não pode falar também usa.</p>
+                <ul class="list">
+                    <li><span class="tag now">já existe</span><span><b>Entende do seu jeito</b>: “ops, desfaz”, “pode fechar a tabela”, “quero ver como grafo”.</span></li>
+                    <li><span class="tag now">já existe</span><span><b>Obedece com o seu papel</b>: um comando nunca dá a você mais poder do que os botões dariam.</span></li>
+                    <li><span class="tag now">já existe</span><span><b>Pergunta antes de apagar</b> e <b>desfaz com um toque</b>. Quando não entende, diz que não entendeu: nunca chuta.</span></li>
+                    <li><span class="tag now">opcional</span><span><b>Um modelo de IA ajuda</b> com o que a gramática não pegou, no seu navegador ou num servidor seu. Ele só <em>sugere</em>, e você confirma.</span></li>
+                </ul>
+                <div class="actions" style="margin-top:1.4rem;justify-content:flex-start"><a class="button ghost" href="comandos.html">Ver todos os comandos</a></div>
             </div>
         </section>
 
         <section class="chapter center" id="como" aria-labelledby="t-como">
             <div class="card wide reveal">
-                <p class="kicker">V · Como usar</p>
+                <p class="kicker">VI · Como usar</p>
                 <h2 id="t-como">Três passos, sem instalar nada</h2>
                 <div class="steps">
                     <div class="step"><h3>Entre</h3><p>Clique em “Entrar na Ágora”. Um espaço seu é criado no seu navegador, na hora.</p></div>
                     <div class="step"><h3>Monte</h3><p>Abra a paleta e escolha as peças. Arraste para onde quiser e ligue umas às outras.</p></div>
-                    <div class="step"><h3>Convide</h3><p>Compartilhe o link. Quem entrar aparece ali, com vídeo, voz, chat e as mesmas peças à frente.</p></div>
+                    <div class="step"><h3>Convide</h3><p>Compartilhe o link, ou mostre o QR code a quem está ao lado. Quem entrar aparece ali, com vídeo, voz, chat e as mesmas peças à frente.</p></div>
                 </div>
                 <div class="actions" style="margin-top:1.6rem"><a class="button" href="app.html">Começar agora</a></div>
             </div>
@@ -100,10 +117,11 @@
 
         <section class="chapter center" id="portas" aria-labelledby="t-portas">
             <div class="card wide reveal">
-                <p class="kicker">VI · Para onde ir</p>
+                <p class="kicker">VII · Para onde ir</p>
                 <h2 id="t-portas">Escolha uma porta</h2>
                 <div class="doors">
                     <a class="door" href="app.html"><span class="glyph" aria-hidden="true">🏛️</span><strong>Entrar na Ágora</strong><span>Abra o espaço de trabalho agora e experimente sozinho.</span></a>
+                    <a class="door" href="comandos.html"><span class="glyph" aria-hidden="true">🎙️</span><strong>Falar com a Ágora</strong><span>Os comandos de voz (e de teclado), com exemplos para copiar.</span></a>
                     <a class="door" href="hospedar.html"><span class="glyph" aria-hidden="true">🏠</span><strong>Rodar em casa</strong><span>Sua própria Ágora para você e seus amigos. Sem programar: só instalar e rodar.</span></a>
                     <a class="door" href="https://github.com/bonafe/ultima-agora/tree/main/docs/especificacao"><span class="glyph" aria-hidden="true">📜</span><strong>Especificação</strong><span>As ideias, os princípios e as decisões do projeto, em português.</span></a>
                     <a class="door" href="https://github.com/bonafe/ultima-agora/blob/main/docs/contrato-agoracomponent.md"><span class="glyph" aria-hidden="true">🧩</span><strong>Criar peças</strong><span>Documentação técnica para quem quer construir componentes novos.</span></a>

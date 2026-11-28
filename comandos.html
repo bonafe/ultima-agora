@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR" class="doc">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Falar com a Ágora · Ultima</title>
+    <meta name="description" content="Como pedir coisas à Ágora Digital falando ou digitando: o que dizer, o que ela faz, como desfazer e o que acontece com a sua voz.">
+    <meta name="theme-color" content="#0a0b1e">
+    <link rel="stylesheet" href="site/landing.css">
+</head>
+<body>
+    <a class="skip" href="#conteudo">Ir para o conteúdo</a>
+    <canvas id="art" aria-hidden="true"></canvas>
+    <header class="top solid">
+        <a class="brand" href="./">Ágora Digital<small>Ultima</small></a>
+        <nav aria-label="Principal"><a href="./">Início</a><a href="hospedar.html">Rodar em casa</a><a class="button" href="app.html">Entrar na Ágora</a></nav>
+    </header>
+
+    <main id="conteudo">
+        <div class="card">
+            <p class="kicker">Comandos</p>
+            <h1>Falar com a Ágora</h1>
+            <p class="lead">Diga o que você quer e a Ágora faz, do mesmo jeito que se você tivesse arrastado e clicado. Ou digite: funciona igual.</p>
+        </div>
+
+        <div class="card">
+            <h2>Em três passos</h2>
+            <div class="steps">
+                <div class="step"><h3>Ligue</h3><p>No cabeçalho, clique no botão <b>🎙 Comandos por voz</b> e depois em <b>Ouvir meus comandos</b>. O navegador pede permissão para o microfone.</p></div>
+                <div class="step"><h3>Chame</h3><p>Sem a palavra <b>“Ágora”</b>, a conversa normal é ignorada. Diga, por exemplo: <span class="say">Ágora, adiciona uma tabela</span></p></div>
+                <div class="step"><h3>Confira</h3><p>A barra mostra o que foi ouvido e o que foi feito. Errou? Clique em <b>Desfazer</b>, ali mesmo.</p></div>
+            </div>
+            <p class="note" style="margin-top:1.2rem"><b>Sem microfone, ou sem vontade de falar?</b> Use a linha de texto da mesma barra. Ela segue o mesmo caminho da voz, <b>não precisa</b> da palavra “Ágora” e funciona até na versão publicada no site. Falar, por outro lado, precisa do servidor de sincronização e do modelo de voz (veja <a href="hospedar.html">Rodar em casa</a>).</p>
+        </div>
+
+        <div class="card">
+            <h2>Fale do seu jeito</h2>
+            <p>Não há decoreba. A Ágora entende variações, interjeições e jeitos diferentes de pedir a mesma coisa. Todas estas frases fazem o mesmo:</p>
+            <p><span class="say">Ágora, desfaz</span><span class="say">Ops, desfaz isso</span><span class="say">Ágora, volta atrás</span></p>
+            <p><span class="say">Remove as notas</span><span class="say">Pode fechar as notas, por favor</span><span class="say">Some com as notas</span></p>
+            <p>Dá para dizer <b>onde</b> ao pedir: <span class="say">adiciona notas à direita da tabela</span> ou <span class="say">cria um grafo embaixo das notas</span>. E dá para falar das janelas pelo nome que elas têm na tela: “a tabela”, “as notas”, “o chat”.</p>
+        </div>
+
+        <div class="card">
+            <h2>O que dá para pedir</h2>
+            <p>Estes são os comandos de hoje. A lista da própria Ágora (diga <span class="say">quais comandos?</span>) vem do mesmo catálogo, então nunca fica desatualizada.</p>
+
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Montar e arrumar o espaço">
+                <table>
+                    <caption>Montar e arrumar o espaço</caption>
+                    <thead><tr><th scope="col">Comando</th><th scope="col">Diga, por exemplo</th><th scope="col">Quem pode</th></tr></thead>
+                    <tbody>
+                        <tr><td>Adicionar</td><td><span class="say">adiciona uma tabela</span> <span class="say">adiciona notas à direita da tabela</span></td><td>quem monta</td></tr>
+                        <tr><td>Remover</td><td><span class="say">remove as notas</span></td><td>quem monta, <b>com confirmação</b></td></tr>
+                        <tr><td>Renomear</td><td><span class="say">renomeia a tabela para Clientes</span></td><td>quem monta</td></tr>
+                        <tr><td>Duplicar</td><td><span class="say">duplica esta janela</span></td><td>quem monta</td></tr>
+                        <tr><td>Mover</td><td><span class="say">move a tabela para a esquerda</span> <span class="say">põe as notas embaixo</span></td><td>quem monta</td></tr>
+                        <tr><td>Ir até</td><td><span class="say">foca nas notas</span> <span class="say">vai para a tabela</span></td><td>todos</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Ligar as peças">
+                <table>
+                    <caption>Ligar as peças</caption>
+                    <thead><tr><th scope="col">Comando</th><th scope="col">Diga, por exemplo</th><th scope="col">Quem pode</th></tr></thead>
+                    <tbody>
+                        <tr><td>Conectar</td><td><span class="say">conecta a busca na tabela</span> <span class="say">liga a tabela ao grafo</span></td><td>quem monta</td></tr>
+                        <tr><td>Desconectar</td><td><span class="say">desconecta a busca da tabela</span></td><td>quem monta, <b>com confirmação</b></td></tr>
+                        <tr><td>Ação da peça</td><td><span class="say">mostra como grafo</span> <span class="say">quero ver como grafo</span></td><td>quem monta</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Escrever, desfazer e pedir ajuda">
+                <table>
+                    <caption>Escrever, desfazer e pedir ajuda</caption>
+                    <thead><tr><th scope="col">Comando</th><th scope="col">Diga, por exemplo</th><th scope="col">Quem pode</th></tr></thead>
+                    <tbody>
+                        <tr><td>Anotar</td><td><span class="say">anota: comprar passagens</span></td><td>quem edita conteúdo</td></tr>
+                        <tr><td>Escrever no chat</td><td><span class="say">escreve no chat: já volto</span></td><td>quem edita conteúdo</td></tr>
+                        <tr><td>Desfazer / refazer</td><td><span class="say">desfaz</span> <span class="say">refaz</span></td><td>quem monta</td></tr>
+                        <tr><td>Parar de transcrever</td><td><span class="say">para de transcrever</span></td><td>todos</td></tr>
+                        <tr><td>O que há na tela</td><td><span class="say">o que tem na tela?</span></td><td>todos</td></tr>
+                        <tr><td>Ajuda</td><td><span class="say">quais comandos?</span></td><td>todos</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="note" style="margin-top:1rem"><b>“Quem monta”</b> é quem tem papel de dono ou editor; <b>“quem edita conteúdo”</b> inclui também participantes; quem só observa (papel de leitor) usa os comandos marcados “todos”.</p>
+        </div>
+
+        <div class="card">
+            <h2>Cuidados embutidos</h2>
+            <ul class="list">
+                <li><span class="tag now">seu papel</span><span>Um comando <b>nunca</b> dá a você mais poder do que a interface daria. Se o seu papel não permite, a Ágora diz qual é o seu papel e não faz.</span></li>
+                <li><span class="tag now">confirma</span><span>Para o que apaga (remover uma janela, desligar uma conexão) a Ágora pergunta: <span class="say">Remover as notas?</span> Responda <span class="say">sim</span> ou <span class="say">não</span>.</span></li>
+                <li><span class="tag now">desfaz</span><span>Cada comando é <b>um passo</b> que se desfaz, e o botão <b>Desfazer</b> aparece na própria mensagem.</span></li>
+                <li><span class="tag now">freio</span><span>Há um limite de comandos por minuto. Se uma frase mal ouvida entrar em laço, a Ágora para sozinha em vez de reescrever o seu espaço.</span></li>
+                <li><span class="tag now">ouve só você</span><span>Cada pessoa liga o <b>seu</b> interruptor, e a Ágora só interpreta a <b>sua</b> fala. Nada é interpretado antes de você ligar.</span></li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Quando a Ágora não entende</h2>
+            <p>Ela diz <b>“Não entendi o comando”</b>. Ela <b>nunca</b> executa um palpite em silêncio: a regra da casa é que um comando errado é pior que nenhum.</p>
+            <p>Quando entende mais ou menos, ela pergunta: <span class="say">Quis dizer “Mover janela”?</span> Diga <span class="say">sim</span> para seguir ou <span class="say">não</span> para cancelar.</p>
+            <p>Dicas: comece pelo verbo (“adiciona”, “remove”, “move”), use o nome que a janela mostra na tela e, se estiver em dúvida, peça <span class="say">quais comandos?</span>.</p>
+        </div>
+
+        <div class="card">
+            <h2>E a minha voz?</h2>
+            <ul class="list">
+                <li><span class="tag now">no seu aparelho</span><span>A voz vira texto <b>no seu navegador</b> (o Whisper roda aí). O áudio não sai do seu aparelho.</span></li>
+                <li><span class="tag now">só comandos</span><span>Ligar o <b>Ouvir meus comandos</b> usa a sua fala só para comandar: ela <b>não</b> entra na transcrição da chamada. Para falar com a sala, é o outro botão, e é uma escolha sua.</span></li>
+                <li><span class="tag now">por padrão</span><span>Quem entende a frase é uma gramática simples, <b>no seu navegador</b>. Nada sai.</span></li>
+            </ul>
+            <p style="margin-top:1rem">Existe um recurso opcional, mais avançado, descrito a seguir. Se você não ligar, nada muda.</p>
+        </div>
+
+        <div class="card" id="modelo-opcional">
+            <h2>Para ir além: um modelo de IA ajudando <small style="font:400 .9rem var(--sans);color:var(--ink-soft)">(opcional)</small></h2>
+            <p>Para frases que a gramática não conhece, a Ágora pode consultar um <b>modelo de decisão</b>. Ele só <b>sugere</b>: se não tem certeza, ela pergunta antes. Você escolhe onde ele roda, acrescentando <code>?model=</code> ao endereço do app:</p>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Onde o modelo roda">
+                <table>
+                    <caption>Onde o modelo roda</caption>
+                    <thead><tr><th scope="col">Opção</th><th scope="col">O que acontece</th><th scope="col">Quando usar</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>off</code></td><td>Só a gramática. Nada sai do navegador.</td><td>Quase sempre. É o padrão.</td></tr>
+                        <tr><td><code>local</code></td><td>O modelo roda <b>no seu navegador</b>.</td><td>Sem servidor de modelo. É pesado (cerca de 260 MB e 2 a 3 segundos por frase) e não funciona em todo aparelho.</td></tr>
+                        <tr><td><code>remote</code></td><td>O modelo roda <b>num servidor</b> seu.</td><td>Aparelhos fracos. Cerca de 0,7 segundo por frase, menos com placa de vídeo.</td></tr>
+                        <tr><td><code>auto</code></td><td>Tenta o servidor; se não der, o navegador.</td><td>Quer o melhor que estiver disponível.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="note" style="margin-top:1rem"><b>Seja realista:</b> o modelo atual, usado sem treino e em português, acerta <b>menos</b> do que a gramática. Por isso ele é só um ajudante que sugere. A vantagem de rodá-lo num servidor é a <b>velocidade</b> e o <b>alcance</b> (aparelhos onde ele não roda), não a qualidade. As medições completas estão no <a href="https://github.com/bonafe/ultima-agora/blob/main/docs/spike-laya.md">relatório</a>.</p>
+            <p><b>Privacidade:</b> usando <code>remote</code> ou <code>auto</code>, <b>a frase</b> vai ao servidor da sua Ágora, que a repassa ao modelo e a <b>esquece</b>: não grava nem registra o texto. Quem hospeda decide para onde o modelo aponta; se for um serviço externo, a frase vai para lá. Como ligar: veja o <a href="hospedar.html#modelo">guia de hospedagem</a>.</p>
+        </div>
+
+        <div class="card">
+            <h2>Quer saber como funciona por dentro?</h2>
+            <p>O desenho completo (da fala ao comando, a governança, o contrato que permite trocar o modelo, os requisitos e as medições) está no
+            <a href="https://github.com/bonafe/ultima-agora/blob/main/docs/especificacao/15-comandos-por-voz.md">capítulo 15 da especificação</a>.
+            Para criar uma peça nova que também responda a comandos, comece pelo <a href="https://github.com/bonafe/ultima-agora/blob/main/docs/contrato-agoracomponent.md">contrato do componente</a>.</p>
+        </div>
+    </main>
+    <footer><p><a href="./">← Voltar ao início</a></p></footer>
+    <script type="module">
+        //A quieter sky for the guide: the same art, held still at dusk
+        import { AgoraArt } from './site/art.js';
+        const art = new AgoraArt(document.getElementById('art'), { still: true });
+        art.setProgress(0.22);
+        addEventListener('resize', () => { art.resize(); art.setProgress(0.22); });
+    </script>
+</body>
+</html>

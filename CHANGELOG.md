@@ -2,6 +2,20 @@
 
 Follows [Semantic Versioning](https://semver.org/). Below 1.0.0, minor versions may change behavior.
 
+## Unreleased (documentação e site)
+
+### Added
+- **Guia de comandos** (`comandos.html`, no site): como ligar, o que dizer, a tabela de todos os comandos com exemplos, os cuidados embutidos (papel, confirmação, desfazer, freio), o que acontece com a voz e as opções `?model=`, com a ressalva honesta sobre o acerto. Tabelas acessíveis (legenda, cabeçalhos, região rolável com rótulo).
+- **Capítulo 15 da especificação** (`15-comandos-por-voz.md`): da fala ao comando, governança, interpretadores, onde o modelo roda, privacidade (D-44) e os requisitos `R-CMD-1..8`; índice, glossário, roadmap e capítulo 6 apontam para ele. Novo **`docs/README.md`**, o mapa de toda a documentação por objetivo.
+- Site: capítulo "A voz" na landing; painéis flutuantes, outra janela do navegador e celular passam a "já existe"; convite por QR code; guia de hospedagem com QR code, voz e o modelo de IA opcional (CPU, GPU, outro serviço).
+- `tools/verificar_publicacao.py` (em `tests/run.sh`, com teste próprio): falha se o app importa uma pasta que não é publicada nem entra no cache offline, ou se o workflow do Pages deixa de copiar uma pasta ou página.
+
+### Changed
+- **README reescrito**: o que é, como experimentar em 30 segundos, o que já funciona (e o que ainda não), arquitetura em um desenho, mapa do repositório, testes e documentação. Substitui o diário de marcos (que continua no `CHANGELOG`).
+
+### Fixed
+- **O app publicado no GitHub Pages não carregava**: o workflow não copiava `voice/` nem `recording/`, que o app importa (`yjs_store.js` importa `recording/`), e o precache offline não listava `recording/`. Corrigidos, e a nova verificação impede a reincidência.
+
 ## Unreleased (modelo de decisão no servidor)
 
 ### Added

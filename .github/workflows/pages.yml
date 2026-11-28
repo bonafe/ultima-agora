@@ -23,7 +23,7 @@ jobs:
       - name: Keep only what the browser needs
         run: |
           mkdir _site
-          cp -r index.html app.html hospedar.html sw.js precache.json site core collaboration conference transcription components ui vendor adapters _site/
+          cp -r index.html app.html hospedar.html comandos.html sw.js precache.json site core collaboration conference transcription recording voice components ui vendor adapters _site/
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:

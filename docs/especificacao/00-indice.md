@@ -1,6 +1,6 @@
 # Especificação do Ultima Agora
 
-**Status:** rascunho 1 — 2026-10-04
+**Status:** rascunho 1 — 2026-10-04 (atualizado em 2026-11-21: comandos por voz e modelo de decisão, capítulo 15)
 **Base tecnológica:** UltimaJS (`../ultima`)
 **Aplicação de referência:** Inteligência Aberta (`../inteligencia-aberta`)
 **Predecessor conceitual:** `espaco` (`../spacejs`) — "Workspace" local em IndexedDB
@@ -29,6 +29,7 @@ Este conjunto de documentos detalha a proposta de produto do Ultima Agora. Ele s
 | 12 | [Decisões em aberto](12-decisoes-em-aberto.md) | D-01 a D-NN, com recomendação |
 | 13 | [Glossário](13-glossario.md) | Termos |
 | 14 | [Mídia, gravação e integração](14-midia-e-integracao.md) | O que a chamada guarda, gravação por pessoa, eventos de saída, `FileStore`, escala |
+| 15 | [Comandos por voz e modelo de decisão](15-comandos-por-voz.md) | Da fala ao comando, governança, interpretadores, onde o modelo roda (navegador, servidor, outro lugar), privacidade |
 
 ## Resumo em uma página
 

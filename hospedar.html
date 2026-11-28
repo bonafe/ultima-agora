@@ -51,9 +51,34 @@
         </div>
 
         <div class="card">
+            <h2>Convidar com um QR code</h2>
+            <p>Com a Ágora no ar, o botão <b>📲 Convidar</b>, no cabeçalho, mostra um <b>QR code</b> e o link do espaço. Quem está ao seu lado aponta a câmera do celular e entra, já no mesmo espaço (e na mesma chamada).</p>
+            <p class="note">Se você abriu a Ágora como <code>localhost</code>, o diálogo avisa: esse endereço só funciona <b>neste computador</b>. Troque, no campo do link, pelo número da rede (como <code>192.168.2.155</code>) e o QR code acompanha.</p>
+        </div>
+
+        <div class="card">
             <h2>Transcrição da fala</h2>
             <p>A transcrição roda no navegador de cada pessoa e precisa de um modelo de voz (cerca de 80 MB), baixado uma vez. Com o Python instalado, na pasta do projeto:</p>
             <pre><code>python3 tools/baixar_modelo_whisper.py</code></pre>
+        </div>
+
+        <div class="card">
+            <h2>Falar com a Ágora</h2>
+            <p>Com a transcrição funcionando, cada pessoa pode ligar o <b>🎙 Comandos por voz</b> e pedir coisas falando: <em>“Ágora, adiciona uma tabela”</em>. Digitar na mesma barra funciona sem microfone. Veja a <a href="comandos.html">lista de comandos</a>. Não é preciso instalar nada além do modelo de voz.</p>
+        </div>
+
+        <div class="card" id="modelo">
+            <h2>Um modelo de IA para entender melhor <small style="font:400 .9rem var(--sans);color:var(--ink-soft)">(opcional)</small></h2>
+            <p>Por padrão a Ágora entende os comandos com regras simples, no navegador, e isso basta para começar. Se quiser experimentar um <b>modelo de IA</b> para as frases que as regras não pegam, você pode rodá-lo no <b>seu servidor</b>, o que também ajuda aparelhos que não conseguem rodá-lo sozinhos. Com o Python instalado, na pasta do projeto:</p>
+            <pre><code>python3 tools/baixar_modelo_laya.py
+AGORA_MODEL_URL=http://model:8790 docker compose --profile model up -d --build</code></pre>
+            <p>Depois acrescente <code>&amp;model=remote</code> ao endereço que você passa às pessoas (ou <code>&amp;model=auto</code>, que tenta o servidor e, se não der, o navegador).</p>
+            <ul class="list">
+                <li><span class="tag now">dica</span><span>Tem uma placa de vídeo NVIDIA? Acrescente <code>-f docker-compose.gpu.yml</code> ao comando do Docker para usar a GPU (precisa do NVIDIA Container Toolkit).</span></li>
+                <li><span class="tag now">dica</span><span>Dá para apontar para <b>outro serviço de IA</b> (o gateway do Inteligência Aberta, um servidor próprio ou uma API externa). Está no <a href="https://github.com/bonafe/ultima-agora/blob/main/server/agora-model/README.md">guia do serviço de modelo</a>.</span></li>
+                <li><span class="tag soon">atenção</span><span>Com <code>remote</code> ou <code>auto</code>, a <b>frase falada</b> (já em texto) vai ao seu servidor, que a repassa ao modelo e a esquece. Se você apontar para uma API externa, a frase vai para ela.</span></li>
+                <li><span class="tag soon">atenção</span><span>Seja realista: o modelo atual ainda acerta <b>menos</b> que as regras e só <em>sugere</em>. Ele ajuda na velocidade e no alcance, não na precisão. <a href="comandos.html#modelo-opcional">Entenda por quê</a>.</span></li>
+            </ul>
         </div>
 
         <div class="card">

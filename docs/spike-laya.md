@@ -1,5 +1,10 @@
 # Spike F0 — modelo de decisão (Laya) para comandos de voz
 
+> **Estado atual (2026-11-21).** Este documento registra as **medições** do modelo de decisão. O desenho que saiu delas (contrato
+> `ChoiceBackend`, modelo no navegador, no servidor ou em outro lugar, sempre atrás das regras) está no
+> [capítulo 15 da especificação](especificacao/15-comandos-por-voz.md) e na decisão **D-44**. As seções abaixo estão em ordem
+> cronológica: F0 (Python), F0b (navegador) e F0c (servidor).
+
 Data: 2026-11-20. Pergunta: um modelo de decisão estilo JEV/Laya, rodando no navegador, escolhe o comando certo a partir da frase falada? Scripts: `tools/spike-laya/`; frases: `tests/fixtures/voice_commands_pt.json` (130 frases pt-BR, 16 comandos + "conversa").
 
 ## O que foi medido

@@ -31,7 +31,7 @@ Like UltimaJS: vanilla JavaScript, native ES modules, **no build step, no npm de
 - `core/workspace/` — `layout.js` (docking tree in the document) and `workspace.js` (the only way to mutate the composition).
 - `adapters/dev/` — `DevHost`, the development host (local, or synced with `?sync=`).
 - `components/` — generic catalog (`ultima-text`, `ultima-notes`, markdown renderer). `ui/` — shell, palette, workspace view, inspector.
-- Run the app: serve the root and open `/app.html` (hash route `#/workspace/<id>`); `/` is the landing page (`index.html`, `hospedar.html`, `site/` — static, GitHub Pages, D-38).
+- Run the app: serve the root and open `/app.html` (hash route `#/workspace/<id>`); `/` is the landing page (`index.html`, `hospedar.html`, `comandos.html`, `site/` — static, GitHub Pages, D-38). Anything the browser imports must be published (`.github/workflows/pages.yml`) and in the offline precache (`tools/gerar_precache.py`): `tools/verificar_publicacao.py` (in `tests/run.sh`) fails otherwise.
 - `ui/invite/` — the "Convidar" dialog (QR code + link); only it imports `vendor/qr` (uqr). `voice/` + `core/commands/` — voice/typed commands on the workspace (spec: `docs/spike-laya.md` for why rules, not a model).
 - `tests/` — zero-dependency browser tests, same runner shape as UltimaJS.
 - `conference/` — `ConferenceProvider`/`ConferenceRoom` contract and `mesh/` (`MeshProvider`: browser-native WebRTC in a full mesh, signalling relayed by `agora-sync`, D-36). Only providers touch `RTCPeerConnection`.
